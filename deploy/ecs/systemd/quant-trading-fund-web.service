@@ -1,0 +1,14 @@
+[Unit]
+Description=quant-trading fund web (FastAPI, reads MySQL)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/quant-trading
+EnvironmentFile=%h/quant-trading/deploy/ecs/fund-stack.env
+ExecStart=%h/miniconda3/envs/quant/bin/python %h/quant-trading/examples/run_web.py
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target

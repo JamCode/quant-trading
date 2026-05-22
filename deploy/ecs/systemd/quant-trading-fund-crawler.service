@@ -1,0 +1,14 @@
+[Unit]
+Description=quant-trading fund crawler (daily AkShare sync -> MySQL)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/quant-trading
+EnvironmentFile=%h/quant-trading/deploy/ecs/fund-stack.env
+ExecStart=%h/miniconda3/envs/quant/bin/fund-crawler
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,192 @@
+{% from '_fund_theme.html' import palette_root, palette_light, pct_class, pct_class_str %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>行业资金流向</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --panel: #1a2230;
+      --text: #e7ecf3;
+      --muted: #9aa7b5;
+      --accent: #4da3ff;
+      --border: #2a3545;
+{{ palette_root() }}
+      --row-alt: rgba(255, 255, 255, 0.03);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1b2430;
+        --muted: #5c6b7a;
+        --accent: #0b69ff;
+        --border: #e1e6ed;
+{{ palette_light() }}
+        --row-alt: rgba(0, 0, 0, 0.02);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header, main { max-width: 1100px; margin: 0 auto; }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    main { padding: 1rem 1.5rem 2rem; }
+    a { color: var(--accent); text-decoration: none; }
+    h1 { margin: 0.35rem 0; font-size: 1.35rem; }
+    .sub { margin: 0; font-size: 0.875rem; color: var(--muted); }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: flex-end;
+      margin: 1rem 0;
+    }
+    label span { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+    select {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.45rem 0.65rem;
+    }
+    input[type="submit"] {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(77, 163, 255, 0.18), rgba(77, 163, 255, 0.08));
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.45rem 0.85rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    section {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 0.75rem;
+    }
+    h2 { margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); text-align: left; }
+    th { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; }
+    .up { color: var(--up); font-weight: 600; }
+    .down { color: var(--down); font-weight: 600; }
+    .meta { font-size: 0.82rem; color: var(--muted); margin-top: 0.75rem; }
+    td.ind a { font-weight: 600; }
+  </style>
+</head>
+<body>
+  {% set bp = (url_prefix ~ '/') if url_prefix else '/' %}
+  <header>
+    <a href="{{ bp }}">← 行业仪表盘</a> · <a href="{{ bp }}advisor">基金 AI 助手</a> · <a href="{{ bp }}funds">基金全目录</a> · <a href="{{ bp }}crawler">爬虫任务</a>
+    <h1>行业资金流向（A 股板块）</h1>
+    <p class="sub">同花顺行业主力资金 · 流通市值=成分股 JOIN 全 A 日表 · 单位：亿元</p>
+  </header>
+  <main>
+    <form class="toolbar" method="get" action="{{ bp }}sectors">
+      <label>
+        <span>统计区间</span>
+        <select name="period">
+          {% for p in period_options %}
+          <option value="{{ p }}" {% if p == period %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>交易日</span>
+        <select name="trade_date">
+          <option value="">最新</option>
+          {% for d in date_options %}
+          <option value="{{ d }}" {% if d == trade_date %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <input type="submit" value="刷新" />
+    </form>
+
+    {% if trade_date %}
+    <p class="meta">数据日期：<strong>{{ trade_date }}</strong> · 区间 <strong>{{ period }}</strong> · 共 {{ rows|length }} 个行业</p>
+    {% else %}
+    <p class="meta">尚无行业资金数据，请确认爬虫已运行并执行 004 号 DDL。</p>
+    {% endif %}
+
+    {% if rows %}
+    <div class="grid">
+      <section>
+        <h2>净流入 Top 15</h2>
+        <table>
+          <thead><tr><th>行业</th><th>净额</th><th>涨跌</th></tr></thead>
+          <tbody>
+            {% for r in top_in %}
+            <tr>
+              <td class="ind"><a href="{{ bp }}sectors/{{ r.industry|uq }}?period={{ period|uq }}&trade_date={{ trade_date|uq }}">{{ r.industry }}</a></td>
+              <td class="up">{{ r.net_amt }}</td>
+              <td class="{{ pct_class_str(r.change_pct) }}">{{ r.change_pct or "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      <section>
+        <h2>净流出 Top 15</h2>
+        <table>
+          <thead><tr><th>行业</th><th>净额</th><th>涨跌</th></tr></thead>
+          <tbody>
+            {% for r in top_out %}
+            <tr>
+              <td class="ind"><a href="{{ bp }}sectors/{{ r.industry|uq }}?period={{ period|uq }}&trade_date={{ trade_date|uq }}">{{ r.industry }}</a></td>
+              <td class="down">{{ r.net_amt }}</td>
+              <td class="{{ pct_class_str(r.change_pct) }}">{{ r.change_pct or "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <section style="margin-top:1rem">
+      <h2>全部行业</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>行业</th><th>净额</th><th>流通市值</th><th>流入</th><th>流出</th><th>涨跌</th><th>领涨股</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td class="ind"><a href="{{ bp }}sectors/{{ r.industry|uq }}?period={{ period|uq }}&trade_date={{ trade_date|uq }}">{{ r.industry }}</a></td>
+            <td class="{{ 'up' if r.net_amt and r.net_amt > 0 else 'down' if r.net_amt and r.net_amt < 0 else '' }}">{{ r.net_amt if r.net_amt is not none else "—" }}</td>
+            <td>{{ r.float_market_cap if r.float_market_cap is not none else "—" }}</td>
+            <td>{{ r.inflow_amt if r.inflow_amt is not none else "—" }}</td>
+            <td>{{ r.outflow_amt if r.outflow_amt is not none else "—" }}</td>
+            <td class="{{ pct_class_str(r.change_pct) }}">{{ r.change_pct or "—" }}</td>
+            <td>{{ r.leader_stock or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

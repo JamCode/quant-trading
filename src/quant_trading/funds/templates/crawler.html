@@ -1,0 +1,258 @@
+{% from '_fund_theme.html' import palette_root, palette_light %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>爬虫任务</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --panel: #1a2230;
+      --text: #e7ecf3;
+      --muted: #9aa7b5;
+      --accent: #4da3ff;
+      --border: #2a3545;
+      --row-alt: rgba(255, 255, 255, 0.03);
+      --warn: #d29922;
+{{ palette_root() }}
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1b2430;
+        --muted: #5c6b7a;
+        --accent: #0b69ff;
+        --border: #e1e6ed;
+        --row-alt: rgba(0, 0, 0, 0.02);
+        --warn: #9a6700;
+{{ palette_light() }}
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header, main { max-width: 1200px; margin: 0 auto; }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    main { padding: 1rem 1.5rem 2rem; }
+    a { color: var(--accent); text-decoration: none; }
+    h1 { margin: 0.35rem 0; font-size: 1.35rem; }
+    .sub { margin: 0; font-size: 0.875rem; color: var(--muted); }
+    .nav-links { font-size: 0.875rem; margin-bottom: 0.5rem; }
+    .nav-links a { margin-right: 1rem; }
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 2rem;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
+    section {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    h2 { margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    th { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; }
+    tr.row-running { background: rgba(210, 153, 34, 0.12); }
+    .badge {
+      display: inline-block;
+      padding: 0.12rem 0.45rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-success { background: rgba(63, 185, 80, 0.2); color: var(--down); }
+    .badge-failed { background: rgba(248, 81, 73, 0.2); color: var(--up); }
+    .badge-running { background: rgba(210, 153, 34, 0.25); color: var(--warn); }
+    .badge-skipped { background: rgba(154, 167, 181, 0.2); color: var(--muted); }
+    .badge-never { background: var(--row-alt); color: var(--muted); }
+    .badge-disabled { opacity: 0.65; }
+    .muted { color: var(--muted); font-size: 0.82rem; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: flex-end;
+      margin-bottom: 0.75rem;
+    }
+    label span { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+    select {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.45rem 0.65rem;
+    }
+    input[type="submit"] {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(77, 163, 255, 0.18), rgba(77, 163, 255, 0.08));
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.45rem 0.85rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .empty {
+      padding: 1rem;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  {% set bp = (url_prefix ~ '/') if url_prefix else '/' %}
+  <header>
+    <div class="nav-links">
+      <a href="{{ bp }}">行业仪表盘</a>
+      <a href="{{ bp }}advisor">基金 AI 助手</a>
+      <a href="{{ bp }}funds">基金全目录</a>
+      <a href="{{ bp }}sectors">行业资金流向</a>
+    </div>
+    <h1>爬虫任务</h1>
+    <p class="sub">定时任务清单与执行记录 · 数据来自 MySQL（爬虫进程写入）</p>
+  </header>
+  <main>
+    <div class="stats">
+      <span>最近活动：<strong>{{ last_activity or "—" }}</strong></span>
+      <span>运行中：<strong>{{ running_count }}</strong> 个任务</span>
+    </div>
+
+    <section aria-labelledby="tasks-heading">
+      <h2 id="tasks-heading">任务清单</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>任务</th>
+            <th>调度</th>
+            <th>启用</th>
+            <th>最近状态</th>
+            <th>开始</th>
+            <th>结束</th>
+            <th>摘要</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tasks %}
+          <tr>
+            <td>
+              <strong>{{ t.display_name }}</strong><br />
+              <code class="muted">{{ t.task_key }}</code>
+            </td>
+            <td>{{ t.schedule_summary or t.schedule_kind }}</td>
+            <td>{% if t.enabled %}是{% else %}<span class="muted">否</span>{% endif %}</td>
+            <td>
+              {% set st = t.last_status or '' %}
+              {% if st == 'success' %}
+              <span class="badge badge-success">{{ t.last_status_label }}</span>
+              {% elif st == 'failed' %}
+              <span class="badge badge-failed">{{ t.last_status_label }}</span>
+              {% elif st == 'running' %}
+              <span class="badge badge-running">{{ t.last_status_label }}</span>
+              {% elif st == 'skipped' %}
+              <span class="badge badge-skipped">{{ t.last_status_label }}</span>
+              {% else %}
+              <span class="badge badge-never">{{ t.last_status_label }}</span>
+              {% endif %}
+            </td>
+            <td class="muted">{{ t.last_started_at or "—" }}</td>
+            <td class="muted">{{ t.last_finished_at or "—" }}</td>
+            <td class="muted">{{ t.last_summary or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="runs-heading">
+      <h2 id="runs-heading">执行历史</h2>
+      <form class="toolbar" method="get" action="{{ bp }}crawler">
+        <label>
+          <span>任务</span>
+          <select name="task_key">
+            <option value="">全部</option>
+            {% for t in tasks %}
+            <option value="{{ t.task_key }}" {% if filter_task_key == t.task_key %}selected{% endif %}>
+              {{ t.display_name }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>状态</span>
+          <select name="status">
+            <option value="">全部</option>
+            <option value="running" {% if filter_status == 'running' %}selected{% endif %}>运行中</option>
+            <option value="success" {% if filter_status == 'success' %}selected{% endif %}>成功</option>
+            <option value="failed" {% if filter_status == 'failed' %}selected{% endif %}>失败</option>
+            <option value="skipped" {% if filter_status == 'skipped' %}selected{% endif %}>跳过</option>
+          </select>
+        </label>
+        <input type="submit" value="筛选" />
+      </form>
+
+      {% if runs %}
+      <table>
+        <thead>
+          <tr>
+            <th>开始</th>
+            <th>任务</th>
+            <th>状态</th>
+            <th>结束</th>
+            <th>摘要</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in runs %}
+          <tr class="{{ 'row-running' if r.status == 'running' else '' }}">
+            <td class="muted">{{ r.started_at }}</td>
+            <td>{{ r.display_name or r.task_key }}</td>
+            <td>
+              {% if r.status == 'success' %}
+              <span class="badge badge-success">{{ r.status_label }}</span>
+              {% elif r.status == 'failed' %}
+              <span class="badge badge-failed">{{ r.status_label }}</span>
+              {% elif r.status == 'running' %}
+              <span class="badge badge-running">{{ r.status_label }}</span>
+              {% else %}
+              <span class="badge badge-skipped">{{ r.status_label }}</span>
+              {% endif %}
+            </td>
+            <td class="muted">{{ r.finished_at or "—" }}</td>
+            <td class="muted">{{ r.summary or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">尚无执行记录。请先执行 migration <code>011_crawler_jobs.sql</code>，并启动 <code>fund-crawler</code> 进程。</p>
+      {% endif %}
+      {% if running_count > 0 %}
+      <p class="muted" style="margin-top:0.75rem">若任务长时间处于「运行中」，可能是爬虫进程异常退出，记录未自动收尾。</p>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

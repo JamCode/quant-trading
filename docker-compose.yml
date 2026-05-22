@@ -1,0 +1,15 @@
+# Dev convenience: MySQL 8 for fund_svc (apply schema/mysql/001_init.sql after first boot).
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: fundroot
+      MYSQL_DATABASE: fund_svc
+      MYSQL_USER: fund
+      MYSQL_PASSWORD: fundpass
+    ports:
+      - "3306:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci

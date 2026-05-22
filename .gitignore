@@ -16,8 +16,12 @@ build/
 .coverage
 htmlcov/
 
+# Crawler runtime logs
+logs/
+
 # Data & secrets (never commit real keys)
 .env
+*.pem
 *.csv
 *.parquet
 data/raw/*

@@ -1,0 +1,261 @@
+{% from '_fund_theme.html' import palette_root, palette_light, pct_class, pct_class_str %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>行业仪表盘</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --panel: #1a2230;
+      --text: #e7ecf3;
+      --muted: #9aa7b5;
+      --accent: #4da3ff;
+      --border: #2a3545;
+{{ palette_root() }}
+      --row-alt: rgba(255, 255, 255, 0.03);
+      --active: rgba(77, 163, 255, 0.15);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1b2430;
+        --muted: #5c6b7a;
+        --accent: #0b69ff;
+        --border: #e1e6ed;
+{{ palette_light() }}
+        --row-alt: rgba(0, 0, 0, 0.02);
+        --active: rgba(11, 105, 255, 0.1);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header, main { max-width: 1200px; margin: 0 auto; }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    main { padding: 1rem 1.5rem 2rem; }
+    a { color: var(--accent); text-decoration: none; }
+    h1 { margin: 0.35rem 0; font-size: 1.35rem; }
+    .sub { margin: 0; font-size: 0.875rem; color: var(--muted); }
+    .nav-links { font-size: 0.875rem; margin-bottom: 0.5rem; }
+    .nav-links a { margin-right: 1rem; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: flex-end;
+      margin: 1rem 0;
+    }
+    label span { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+    select {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.45rem 0.65rem;
+    }
+    input[type="submit"] {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(77, 163, 255, 0.18), rgba(77, 163, 255, 0.08));
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.45rem 0.85rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    section {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 0.75rem;
+    }
+    h2 { margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); text-align: left; }
+    th { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; }
+    .up { color: var(--up); font-weight: 600; }
+    .down { color: var(--down); font-weight: 600; }
+    .meta { font-size: 0.82rem; color: var(--muted); margin-top: 0.75rem; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: var(--row-alt); }
+    tr.active-row { background: var(--active); }
+    td.ind a { font-weight: 600; }
+    .focus-panel { margin-top: 1rem; }
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 2rem;
+      margin: 0.75rem 0;
+      font-size: 0.9rem;
+    }
+    .footnote {
+      margin-top: 1.25rem;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px dashed var(--border);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.82rem;
+    }
+  </style>
+</head>
+<body>
+  {% set bp = (url_prefix ~ '/') if url_prefix else '/' %}
+  <header>
+    <div class="nav-links">
+      <a href="{{ bp }}advisor">基金 AI 助手</a>
+      <a href="{{ bp }}funds">基金全目录</a>
+      <a href="{{ bp }}sectors">行业资金流向（完整榜）</a>
+      <a href="{{ bp }}crawler">爬虫任务</a>
+    </div>
+    <h1>行业仪表盘</h1>
+    <p class="sub">行业主力资金 + 季报持仓穿透暴露 · 相关基金按近 1 年收益排序</p>
+  </header>
+  <main>
+    <form class="toolbar" method="get" action="{{ bp }}">
+      <label>
+        <span>统计区间</span>
+        <select name="period">
+          {% for p in period_options %}
+          <option value="{{ p }}" {% if p == period %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>交易日</span>
+        <select name="trade_date">
+          <option value="">最新</option>
+          {% for d in date_options %}
+          <option value="{{ d }}" {% if d == trade_date %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>当前行业</span>
+        <select name="industry">
+          <option value="">自动（净流入 Top1）</option>
+          {% for ind in industry_options %}
+          <option value="{{ ind }}" {% if ind == focus_industry %}selected{% endif %}>{{ ind }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <input type="submit" value="刷新" />
+    </form>
+
+    {% if trade_date %}
+    <p class="meta">
+      数据日 <strong>{{ trade_date }}</strong> · 区间 <strong>{{ period }}</strong>
+      {% if focus_industry %} · 当前行业 <strong>{{ focus_industry }}</strong>{% endif %}
+    </p>
+    {% else %}
+    <p class="meta">尚无行业资金数据，请确认爬虫已运行。</p>
+    {% endif %}
+
+    <div class="grid">
+      <section>
+        <h2>净流入 Top 10</h2>
+        <table>
+          <thead><tr><th>行业</th><th>净额(亿)</th><th>涨跌</th></tr></thead>
+          <tbody>
+            {% for r in top_in %}
+            <tr class="clickable{% if r.industry == focus_industry %} active-row{% endif %}"
+                onclick="location.href='{{ bp }}?period={{ period|uq }}&trade_date={{ trade_date|uq }}&industry={{ r.industry|uq }}'">
+              <td class="ind">{{ r.industry }}</td>
+              <td class="up">{{ r.net_amt if r.net_amt is not none else "—" }}</td>
+              <td class="{{ pct_class_str(r.change_pct) }}">{{ r.change_pct or "—" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3">暂无数据</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      <section>
+        <h2>净流出 Top 10</h2>
+        <table>
+          <thead><tr><th>行业</th><th>净额(亿)</th><th>涨跌</th></tr></thead>
+          <tbody>
+            {% for r in top_out %}
+            <tr class="clickable{% if r.industry == focus_industry %} active-row{% endif %}"
+                onclick="location.href='{{ bp }}?period={{ period|uq }}&trade_date={{ trade_date|uq }}&industry={{ r.industry|uq }}'">
+              <td class="ind">{{ r.industry }}</td>
+              <td class="down">{{ r.net_amt if r.net_amt is not none else "—" }}</td>
+              <td class="{{ pct_class_str(r.change_pct) }}">{{ r.change_pct or "—" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3">暂无数据</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <section class="focus-panel">
+      <h2>当前行业 · 相关基金（暴露 ≥ {{ min_exposure_pct }}%）</h2>
+      {% if focus_industry and summary %}
+      <div class="stats">
+        <span>净流入 <strong class="{{ 'up' if summary.net_amt and summary.net_amt > 0 else 'down' }}">{{ summary.net_amt if summary.net_amt is not none else "—" }}</strong> 亿</span>
+        <span>涨跌 <strong class="{{ pct_class_str(summary.change_pct) }}">{{ summary.change_pct or "—" }}</strong></span>
+        <span>流通市值 <strong>{{ summary.float_market_cap if summary.float_market_cap is not none else "—" }}</strong> 亿</span>
+        <span><a href="{{ bp }}sectors/{{ focus_industry|uq }}?period={{ period|uq }}&trade_date={{ trade_date|uq }}">成分股与详情 →</a></span>
+        <span><a href="{{ bp }}funds?industry={{ focus_industry|uq }}&amp;sort=return_1y&amp;order=desc">全目录筛选 →</a></span>
+      </div>
+      {% endif %}
+
+      {% if not has_exposure %}
+      <p class="meta">尚无基金–行业暴露数据（需先同步同花顺行业成分股，再汇总持仓）。持仓表已有数据时会自动重算；也可在服务器手动执行 <code>run_fund_industry_pipeline</code>。上方可点选行业，数据就绪后会显示相关基金。</p>
+      {% elif related_funds %}
+      <p class="meta">暴露基于季报持仓，报告期 <strong>{{ exposure_report_date }}</strong>（非实时仓位，可能与当日资金流存在滞后）。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>代码</th><th>简称</th><th>行业暴露%</th><th>日涨跌</th><th>近1月</th><th>近3月</th><th>近1年</th><th>申购</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in related_funds %}
+          <tr>
+            <td><code><a href="{{ bp }}funds/{{ f.code }}">{{ f.code }}</a></code></td>
+            <td>{{ f.short_name or "—" }}</td>
+            <td><strong>{{ "%.2f"|format(f.weight_pct) if f.weight_pct is not none else "—" }}</strong></td>
+            <td class="{{ pct_class_str(f.daily_pct) }}">{{ f.daily_pct or "—" }}</td>
+            <td class="{{ pct_class(f.return_1m) }}">{{ "%.2f%%"|format(f.return_1m) if f.return_1m is not none else "—" }}</td>
+            <td class="{{ pct_class(f.return_3m) }}">{{ "%.2f%%"|format(f.return_3m) if f.return_3m is not none else "—" }}</td>
+            <td class="{{ pct_class(f.return_1y) }}">{{ "%.2f%%"|format(f.return_1y) if f.return_1y is not none else "—" }}</td>
+            <td>{{ f.subscribe_status or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% elif focus_industry %}
+      <p class="meta">行业 <strong>{{ focus_industry }}</strong> 下暂无暴露 ≥ {{ min_exposure_pct }}% 的基金（季报持仓未覆盖该行业，或阈值过高）。可尝试在「当前行业」下拉框换行业，或调低 <code>FUND_EXPOSURE_MIN_PCT</code>。</p>
+      {% else %}
+      <p class="meta">点击左侧行业行以查看相关基金。</p>
+      {% endif %}
+    </section>
+
+    <p class="footnote">
+      <strong>v1 说明：</strong>行业暴露由最新季报股票持仓与同花顺行业成分映射汇总；未映射到行业的持仓股不计入暴露。
+      东财接口限流，首跑持仓可能需数小时，建议周更。同类排名在基金详情页按需加载。
+    </p>
+  </main>
+</body>
+</html>

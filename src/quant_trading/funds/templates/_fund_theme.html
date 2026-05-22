@@ -1,0 +1,22 @@
+{# A-share palette: 涨红跌绿. Import: {% from '_fund_theme.html' import palette_root, palette_light, pct_class, pct_class_str %} #}
+
+{% macro palette_root() -%}
+      --up: #f85149;
+      --down: #3fb950;
+      --error: #ff7b72;
+{%- endmacro %}
+
+{% macro palette_light() -%}
+      --up: #cf222e;
+      --down: #1a7f37;
+      --error: #cf222e;
+{%- endmacro %}
+
+{% macro pct_class(val) -%}
+{%- if val is not none and val > 0 -%}up{%- elif val is not none and val < 0 -%}down{%- endif -%}
+{%- endmacro %}
+
+{% macro pct_class_str(s) -%}
+{%- set t = (s or '')|string|trim -%}
+{%- if t and (t[0] in '-−' or t.startswith('−')) -%}down{%- elif t and t not in ('—', '-', '') -%}up{%- endif -%}
+{%- endmacro %}

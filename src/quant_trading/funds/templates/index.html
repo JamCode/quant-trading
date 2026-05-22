@@ -1,0 +1,329 @@
+{% from '_fund_theme.html' import palette_root, palette_light, pct_class, pct_class_str %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>基金全目录</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --panel: #1a2230;
+      --text: #e7ecf3;
+      --muted: #9aa7b5;
+      --accent: #4da3ff;
+      --border: #2a3545;
+      --row-alt: rgba(255, 255, 255, 0.03);
+{{ palette_root() }}
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1b2430;
+        --muted: #5c6b7a;
+        --accent: #0b69ff;
+        --border: #e1e6ed;
+        --row-alt: rgba(0, 0, 0, 0.02);
+{{ palette_light() }}
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header, main { max-width: 1280px; margin: 0 auto; }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    h1 { margin: 0 0 0.35rem; font-size: 1.25rem; font-weight: 650; }
+    .sub { margin: 0; font-size: 0.875rem; color: var(--muted); }
+    main { padding: 1rem 1.5rem 2rem; }
+    a { color: var(--accent); text-decoration: none; }
+    .filter-panel {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 1rem 1rem 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: flex-end;
+      margin-bottom: 0.75rem;
+    }
+    label span {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    input[type="text"], select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.45rem 0.65rem;
+      font-size: 0.875rem;
+    }
+    input[type="text"].wide { min-width: 16rem; flex: 1; }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.75rem;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      cursor: pointer;
+      font-size: 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.28rem 0.75rem;
+      background: transparent;
+      color: var(--text);
+      user-select: none;
+    }
+    .chip input { display: none; }
+    .chip:has(input:checked) {
+      border-color: var(--accent);
+      background: rgba(77, 163, 255, 0.15);
+      font-weight: 600;
+    }
+    .actions { display: flex; gap: 0.5rem; align-items: center; }
+    button, .btn {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(77, 163, 255, 0.18), rgba(77, 163, 255, 0.08));
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.45rem 0.85rem;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.875rem;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn.secondary, button.secondary {
+      background: transparent;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    .active-filters {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+      padding-top: 0.25rem;
+      border-top: 1px dashed var(--border);
+    }
+    .active-filters strong { color: var(--text); }
+    .check-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      padding-bottom: 0.45rem;
+    }
+    .check-label input { accent-color: var(--accent); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 0.55rem 0.65rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      background: rgba(77, 163, 255, 0.06);
+      white-space: nowrap;
+    }
+    th a { color: inherit; text-decoration: none; }
+    th a:hover { color: var(--accent); }
+    tbody tr:nth-child(even) { background: var(--row-alt); }
+    tbody tr:hover { background: rgba(77, 163, 255, 0.06); }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.82rem;
+    }
+    .up { color: var(--up); font-weight: 600; }
+    .down { color: var(--down); font-weight: 600; }
+    .type-cell { max-width: 11rem; font-size: 0.8rem; color: var(--muted); }
+    .pager {
+      margin-top: 0.85rem;
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+    .pager a { color: var(--accent); text-decoration: none; }
+    .pager a.disabled { pointer-events: none; opacity: 0.35; color: var(--muted); }
+    .meta { margin-top: 0.5rem; font-size: 0.82rem; color: var(--muted); }
+    .error { color: var(--error); }
+  </style>
+</head>
+<body>
+  {% set bp = (url_prefix ~ '/') if url_prefix else '/' %}
+  <header>
+    <p class="sub" style="margin-bottom:0.5rem"><a href="{{ bp }}">← 行业仪表盘</a> · <a href="{{ bp }}advisor">基金 AI 助手</a> · <a href="{{ bp }}crawler">爬虫任务</a></p>
+    <h1>基金全目录</h1>
+    <p class="sub">本地 MySQL 缓存 · 支持分类、行业暴露、排序 · 共 <strong>{{ total }}</strong> 条匹配</p>
+  </header>
+  <main>
+    <form class="filter-panel" method="get" action="{{ bp }}funds">
+      <div class="chips" role="group" aria-label="基金大类">
+        {% for cat_id, cat_label in category_options %}
+        <label class="chip">
+          <input type="radio" name="category" value="{{ cat_id }}" {% if category == cat_id %}checked{% endif %} />
+          {{ cat_label }}
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="filter-row">
+        <label style="flex:1;min-width:14rem">
+          <span>搜索（代码 / 简称 / 拼音 / 类型关键词）</span>
+          <input class="wide" type="search" name="q" value="{{ q }}" placeholder="沪深300、161725、QDII、纳斯达克…" />
+        </label>
+        <label>
+          <span>类型包含</span>
+          <input type="text" name="fund_type" value="{{ fund_type }}" placeholder="如 混合、指数型-股票" />
+        </label>
+        <label>
+          <span>行业暴露</span>
+          <select name="industry">
+            <option value="">不限</option>
+            {% for ind in industry_options %}
+            <option value="{{ ind }}" {% if industry == ind %}selected{% endif %}>{{ ind }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="filter-row">
+        <label>
+          <span>排序</span>
+          <select name="sort">
+            {% for sort_id, sort_label in sort_options %}
+            <option value="{{ sort_id }}" {% if sort == sort_id %}selected{% endif %}>{{ sort_label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>方向</span>
+          <select name="order">
+            <option value="asc" {% if order == 'asc' %}selected{% endif %}>升序</option>
+            <option value="desc" {% if order == 'desc' %}selected{% endif %}>降序</option>
+          </select>
+        </label>
+        <label>
+          <span>每页</span>
+          <select name="per_page">
+            {% for n in [20, 50, 100, 200] %}
+            <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="check-label">
+          <input type="checkbox" name="subscribe_open" value="1" {% if subscribe_open %}checked{% endif %} />
+          仅开放申购
+        </label>
+        <input type="hidden" name="page" value="1" />
+        <div class="actions">
+          <button type="submit">应用筛选</button>
+          <a class="btn secondary" href="{{ bp }}funds">清空</a>
+        </div>
+      </div>
+
+      {% if q or fund_type or category or industry or subscribe_open %}
+      <p class="active-filters">
+        当前筛选：
+        {% if category %}{% for id, lbl in category_options %}{% if id == category %}<strong>{{ lbl }}</strong>{% endif %}{% endfor %} · {% endif %}
+        {% if q %}关键词 <strong>{{ q }}</strong> · {% endif %}
+        {% if fund_type %}类型含 <strong>{{ fund_type }}</strong> · {% endif %}
+        {% if industry %}行业 <strong>{{ industry }}</strong> · {% endif %}
+        {% if subscribe_open %}可申购 · {% endif %}
+        排序 <strong>{{ sort }}</strong> {{ order }}
+      </p>
+      {% endif %}
+    </form>
+
+    <table>
+      <thead>
+        <tr>
+          <th>代码</th>
+          <th>简称</th>
+          <th>类型</th>
+          <th>净值日</th>
+          <th>单位净值</th>
+          <th>日涨跌</th>
+          <th>近3月</th>
+          <th>近1年</th>
+          <th>申购</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><a href="{{ bp }}funds/{{ r.code }}"><code>{{ r.code }}</code></a></td>
+          <td><a href="{{ bp }}funds/{{ r.code }}">{{ r.short_name }}</a></td>
+          <td class="type-cell" title="{{ r.fund_type }}">{{ r.fund_type or "—" }}</td>
+          <td>{{ r.nav_date or "—" }}</td>
+          <td>{{ r.nav_unit or "—" }}</td>
+          <td class="{{ pct_class_str(r.daily_pct or r.daily_change) }}">{{ r.daily_pct or r.daily_change or "—" }}</td>
+          <td class="{{ pct_class(r.return_3m) }}">{% if r.return_3m is not none %}{{ "%.2f"|format(r.return_3m) }}%{% else %}—{% endif %}</td>
+          <td class="{{ pct_class(r.return_1y) }}">{% if r.return_1y is not none %}{{ "%.2f"|format(r.return_1y) }}%{% else %}—{% endif %}</td>
+          <td>{{ r.subscribe_status or "—" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">没有匹配的基金。试试放宽大类、去掉行业条件，或换关键词。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <nav class="pager" aria-label="分页">
+      {% set prev = page - 1 %}
+      {% set next = page + 1 %}
+      <span>第 {{ page }} / {{ pages }} 页</span>
+      <a href="?{{ query_base }}&amp;page={{ prev }}" class="{{ 'disabled' if page <= 1 else '' }}">上一页</a>
+      <a href="?{{ query_base }}&amp;page={{ next }}" class="{{ 'disabled' if page >= pages else '' }}">下一页</a>
+    </nav>
+
+    {% if industry %}
+    <p class="meta">行业筛选基于季报持仓暴露，仅覆盖已同步持仓的基金；QDII 海外仓位通常无法映射到 A 股行业。</p>
+    {% endif %}
+    <p class="meta"><a href="{{ bp }}crawler">查看爬虫任务与同步状态 →</a></p>
+  </main>
+  <script>
+    document.querySelectorAll('.chip input[type="radio"]').forEach((el) => {
+      el.addEventListener('change', () => el.closest('form')?.requestSubmit());
+    });
+  </script>
+</body>
+</html>

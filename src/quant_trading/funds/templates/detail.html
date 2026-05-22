@@ -1,0 +1,801 @@
+{% from '_fund_theme.html' import palette_root, palette_light, pct_class, pct_class_str %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ fund.short_name }}（{{ fund.code }}）</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --panel: #1a2230;
+      --text: #e7ecf3;
+      --muted: #9aa7b5;
+      --accent: #4da3ff;
+      --border: #2a3545;
+      --row-alt: rgba(255, 255, 255, 0.03);
+{{ palette_root() }}
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1b2430;
+        --muted: #5c6b7a;
+        --accent: #0b69ff;
+        --border: #e1e6ed;
+        --row-alt: rgba(0, 0, 0, 0.02);
+{{ palette_light() }}
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    main {
+      padding: 1rem 1.5rem 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    h1 {
+      margin: 0.35rem 0;
+      font-size: 1.35rem;
+      font-weight: 650;
+    }
+    .sub { margin: 0; font-size: 0.875rem; color: var(--muted); }
+    section {
+      margin-top: 1.35rem;
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+    }
+    h2 {
+      margin: 0 0 0.65rem;
+      font-size: 0.95rem;
+      letter-spacing: 0.03em;
+      color: var(--muted);
+      font-weight: 650;
+      text-transform: uppercase;
+    }
+    dl {
+      margin: 0;
+      display: grid;
+      grid-template-columns: 10rem 1fr;
+      gap: 0.35rem 1rem;
+      font-size: 0.875rem;
+    }
+    dt { color: var(--muted); }
+    dd { margin: 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th, td {
+      padding: 0.45rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      background: rgba(77, 163, 255, 0.06);
+    }
+    tbody tr:nth-child(even) { background: var(--row-alt); }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+    }
+    .actions { margin-top: 1rem; font-size: 0.875rem; }
+    .error { color: var(--error); margin-top: 0.75rem; font-size: 0.875rem; }
+    .up { color: var(--up); font-weight: 600; }
+    .down { color: var(--down); font-weight: 600; }
+    .scrollwrap {
+      max-height: 22rem;
+      overflow: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .muted-list { margin: 0.25rem 0 0; padding-left: 1.15rem; color: var(--muted); font-size: 0.8rem; }
+    .chart-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem 1rem;
+      margin-bottom: 0.75rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .chart-toolbar-ranges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+    }
+    .chart-period-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 1.25rem;
+      align-items: baseline;
+      font-size: 0.85rem;
+      margin-left: auto;
+    }
+    .chart-period-stats .stat label {
+      color: var(--muted);
+      margin-right: 0.35rem;
+      font-size: 0.78rem;
+    }
+    .chart-period-stats .stat strong {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .chart-period-stats .stat strong.up { color: var(--up); }
+    .chart-period-stats .stat strong.down { color: var(--down); }
+    .chart-period-stats .stat strong.flat { color: var(--text); }
+    .chart-toolbar button {
+      font-size: 0.78rem;
+      padding: 0.3rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .chart-toolbar button.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(77, 163, 255, 0.1);
+    }
+    .chart-wrap {
+      position: relative;
+      height: 300px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  {% set bp = (url_prefix ~ '/') if url_prefix else '/' %}
+  <header>
+    <a href="{{ bp }}funds">← 基金目录</a> · <a href="{{ bp }}advisor">基金 AI 助手</a> · <a href="{{ bp }}crawler">爬虫任务</a> · <a href="{{ bp }}">仪表盘</a>
+    <h1>{{ fund.short_name }} <code>{{ fund.code }}</code></h1>
+    <p class="sub">{{ fund.fund_type }} · 行情来自东方财富；档案/费率/持仓扩展信息由 AkShare 聚合（雪球 + 季报披露）。</p>
+  </header>
+  <main>
+    <section>
+      <h2>行情快照（定时任务 · fund_open_fund_daily_em）</h2>
+      <dl>
+        <dt>净值日期</dt><dd>{{ fund.nav_date or "—" }}</dd>
+        <dt>单位净值</dt><dd>{{ fund.nav_unit or "—" }}</dd>
+        <dt>累计净值</dt><dd>{{ fund.nav_acc or "—" }}</dd>
+        <dt>日增长值</dt><dd>{{ fund.daily_change or "—" }}</dd>
+        <dt>日增长率</dt><dd class="{{ pct_class_str(fund.daily_pct) }}">{{ fund.daily_pct or "—" }}</dd>
+        <dt>申购状态</dt><dd>{{ fund.subscribe_status or "—" }}</dd>
+        <dt>赎回状态</dt><dd>{{ fund.redeem_status or "—" }}</dd>
+        <dt>手续费提示</dt><dd>{{ fund.fee_note or "—" }}</dd>
+        <dt>目录同步时间(UTC)</dt><dd>{{ fund.updated_at }}</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>历史净值（按需加载 · 首次约 0.3s）</h2>
+      {% if nav_error %}
+      <p class="error">历史净值加载失败：{{ nav_error }}</p>
+      {% elif nav_meta %}
+      <p class="sub" style="margin:0 0 0.75rem">
+        共 {{ nav_meta.total }} 条；
+        来源 {% if nav_meta.source == 'cache' %}MySQL 缓存{% elif nav_meta.source == 'akshare' %}刚拉取并入库{% else %}无数据{% endif %}；
+        <a href="{{ bp }}funds/{{ code }}?nav_refresh=1{% if refresh %}&amp;refresh=1{% endif %}">重新拉取历史</a>
+        · <a href="{{ bp }}api/funds/{{ code }}/nav-history">JSON API</a>
+      </p>
+      {% if nav_chart_json != "[]" %}
+      <div class="chart-toolbar" id="navChartToolbar" role="group" aria-label="净值区间">
+        <div class="chart-toolbar-ranges">
+          <span class="sub" style="margin:0">区间</span>
+          <button type="button" data-range="1m">近1月</button>
+          <button type="button" data-range="3m">近3月</button>
+          <button type="button" data-range="6m">近6月</button>
+          <button type="button" data-range="1y" class="active">近1年</button>
+          <button type="button" data-range="3y">近3年</button>
+          <button type="button" data-range="all">全部</button>
+        </div>
+        <div class="chart-period-stats" id="navPeriodStats" aria-live="polite">
+          <span class="stat"><label>本基金</label><strong id="navFundPeriodRet" class="flat">—</strong></span>
+          <span class="stat"><label>沪深300</label><strong id="navIdxPeriodRet" class="flat">—</strong></span>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="navChart" aria-label="单位净值走势图"></canvas>
+      </div>
+      <p class="sub" style="margin:0.75rem 0 0.35rem">累计收益率对比（区间起点 = 0%，与上图同区间）</p>
+      <div class="chart-wrap">
+        <canvas id="navReturnChart" aria-label="基金与沪深300累计收益率对比"></canvas>
+      </div>
+      <p class="sub" style="margin:0.35rem 0 0">沪深300 日 K 来自 <code>market_index_daily</code>（爬虫同步）；无数据时仅显示基金曲线。</p>
+      {% endif %}
+      {% if nav_rows %}
+      <div class="scrollwrap">
+        <table>
+          <thead><tr><th>日期</th><th>单位净值</th><th>日增长率</th></tr></thead>
+          <tbody>
+            {% for r in nav_rows %}
+            <tr>
+              <td>{{ r.nav_date }}</td>
+              <td>{{ r.nav_unit or "—" }}</td>
+              <td class="{{ pct_class_str(r.daily_pct) }}">{{ r.daily_pct or "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="sub" style="margin-top:0.5rem">上表为最近 60 个交易日（新→旧）。完整序列见 API。</p>
+      {% else %}
+      <p class="sub">暂无历史净值（场外开放式通常可从东方财富拉取）。</p>
+      {% endif %}
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>同类排名走势（近三月收益排名 · 按需加载）</h2>
+      <p class="sub" style="margin:0 0 0.65rem">名次<strong>越小</strong>表示近 3 个月收益在同类/全市场中越靠前；下图 Y 轴已反转便于阅读。</p>
+      {% if rank_error %}
+      <p class="error">同类排名加载失败：{{ rank_error }}</p>
+      {% elif rank_meta %}
+      <p class="sub" style="margin:0 0 0.75rem">
+        共 {{ rank_meta.total }} 条；
+        来源 {% if rank_meta.source == 'cache' %}MySQL 缓存{% elif rank_meta.source == 'akshare' %}刚拉取并入库{% else %}无数据{% endif %}；
+        <a href="{{ bp }}funds/{{ code }}?rank_refresh=1{% if refresh %}&amp;refresh=1{% endif %}{% if nav_refresh %}&amp;nav_refresh=1{% endif %}">重新拉取排名</a>
+        · <a href="{{ bp }}api/funds/{{ code }}/peer-rank">JSON API</a>
+      </p>
+      {% if rank_chart_json != "[]" %}
+      <div class="chart-toolbar" id="rankChartToolbar" role="group" aria-label="排名区间">
+        <span class="sub" style="margin:0">区间</span>
+        <button type="button" data-range="1y" class="active">近1年</button>
+        <button type="button" data-range="3y">近3年</button>
+        <button type="button" data-range="all">全部</button>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="rankChart" aria-label="同类排名走势图"></canvas>
+      </div>
+      {% endif %}
+      {% if rank_rows %}
+      <div class="scrollwrap" style="margin-top:0.75rem">
+        <table>
+          <thead><tr><th>日期</th><th>同类排名</th><th>全市场排名</th></tr></thead>
+          <tbody>
+            {% for r in rank_rows %}
+            <tr>
+              <td>{{ r.rank_date }}</td>
+              <td>{{ r.rank_in_type if r.rank_in_type is not none else "—" }}</td>
+              <td>{{ r.rank_total if r.rank_total is not none else "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="sub" style="margin-top:0.5rem">上表为最近 60 个交易日（新→旧）。</p>
+      {% elif not rank_chart_json or rank_chart_json == "[]" %}
+      <p class="sub">暂无排名数据。</p>
+      {% endif %}
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>同类基金 Top5（东财 · 按需加载）</h2>
+      <p class="sub" style="margin:0 0 0.65rem">
+        来源天天基金 <code>pingzhongdata</code> 的 <code>swithSameType</code>：各区间同类中收益靠前的 5 只（非完整同类池）。
+      </p>
+      {% if peers_error %}
+      <p class="error">同类基金加载失败：{{ peers_error }}</p>
+      {% elif peers_meta %}
+      <p class="sub" style="margin:0 0 0.75rem">
+        共 {{ peers_meta.total }} 条 · {{ peers_meta.periods }} 个区间；
+        来源 {% if peers_meta.source == 'cache' %}MySQL 缓存{% elif peers_meta.source == 'eastmoney' %}刚拉取并入库{% else %}无数据{% endif %}；
+        <a href="{{ bp }}funds/{{ code }}?peers_refresh=1{% if refresh %}&amp;refresh=1{% endif %}{% if nav_refresh %}&amp;nav_refresh=1{% endif %}{% if rank_refresh %}&amp;rank_refresh=1{% endif %}">重新拉取</a>
+        · <a href="{{ bp }}api/funds/{{ code }}/peer-same-type">JSON API</a>
+      </p>
+      {% if peers_groups %}
+      {% for g in peers_groups %}
+      <h3 style="font-size:1rem;margin:1rem 0 0.5rem">{{ g.period_label }}</h3>
+      <div class="scrollwrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>代码</th><th>简称</th><th>区间收益</th></tr>
+          </thead>
+          <tbody>
+            {% for p in g.peers %}
+            <tr>
+              <td>{{ p.rank_pos }}</td>
+              <td><a href="{{ bp }}funds/{{ p.peer_code }}"><code>{{ p.peer_code }}</code></a></td>
+              <td><a href="{{ bp }}funds/{{ p.peer_code }}">{{ p.peer_name }}</a></td>
+              <td class="{{ pct_class(p.return_pct) }}">{% if p.return_pct is not none %}{{ "%.2f"|format(p.return_pct) }}%{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endfor %}
+      {% else %}
+      <p class="sub">暂无同类 Top5 数据（部分基金东财未提供）。</p>
+      {% endif %}
+      {% endif %}
+    </section>
+
+    {% if fetch_error %}
+    <p class="error">扩展信息加载失败：{{ fetch_error }}</p>
+    {% endif %}
+
+    {% if extended %}
+    <section>
+      <h2>基金档案（雪球 / AkShare）</h2>
+      <dl>
+        {% for key, val in extended.basic.items() %}
+        <dt>{{ key }}</dt><dd>{{ val }}</dd>
+        {% endfor %}
+      </dl>
+    </section>
+
+    {% if extended.fees %}
+    <section>
+      <h2>交易与运作费用</h2>
+      <table>
+        <thead>
+          <tr>
+            {% for key in extended.fees[0].keys() %}
+            <th>{{ key }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in extended.fees %}
+          <tr>
+            {% for key in extended.fees[0].keys() %}
+            <td>{{ row[key] }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    {% if extended.holdings %}
+    {% if extended.holdings.warnings %}
+    <section>
+      <h2>持仓抓取提示</h2>
+      <ul class="muted-list">
+        {% for w in extended.holdings.warnings %}
+        <li>{{ w }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+    <section>
+      <h2>资产配置（雪球）</h2>
+      {% if extended.holdings.asset_mix %}
+      <table>
+        <thead>
+          <tr>
+            {% for key in extended.holdings.asset_mix[0].keys() %}
+            <th>{{ key }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in extended.holdings.asset_mix %}
+          <tr>
+            {% for key in extended.holdings.asset_mix[0].keys() %}
+            <td>{{ row[key] }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="sub">暂无资产配置拆分（接口未返回或该基金不适用）。</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>股票投资明细（东方财富 · 季报）</h2>
+      {% if extended.holdings.stocks %}
+      <p class="sub">报告期：{{ extended.holdings.stock_quarter }}（数据年：{{ extended.holdings.stock_year_used }}）</p>
+      <div class="scrollwrap">
+        <table>
+          <thead>
+            <tr>
+              {% for key in extended.holdings.stocks[0].keys() %}
+              <th>{{ key }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in extended.holdings.stocks %}
+            <tr>
+              {% for key in extended.holdings.stocks[0].keys() %}
+              <td>{{ row[key] }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="sub">暂无股票季报持仓（货币型、纯债指数未持股，或未披露）。</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>债券投资明细（东方财富 · 季报）</h2>
+      {% if extended.holdings.bonds %}
+      <p class="sub">报告期：{{ extended.holdings.bond_quarter }}（数据年：{{ extended.holdings.bond_year_used }}）</p>
+      <div class="scrollwrap">
+        <table>
+          <thead>
+            <tr>
+              {% for key in extended.holdings.bonds[0].keys() %}
+              <th>{{ key }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in extended.holdings.bonds %}
+            <tr>
+              {% for key in extended.holdings.bonds[0].keys() %}
+              <td>{{ row[key] }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="sub">暂无债券季报持仓（股票型或未持有披露债券）。</p>
+      {% endif %}
+    </section>
+    {% endif %}
+    {% endif %}
+
+    <p class="actions">
+      <a href="{{ bp }}funds/{{ code }}?refresh=1">强制刷新扩展信息缓存</a>
+      <span style="color:var(--muted)">（档案、费率、资产配置与季报持仓会重新抓取）</span>
+    </p>
+  </main>
+  {% if nav_chart_json != "[]" %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      const ALL = {{ nav_chart_json | safe }};
+      if (!ALL.length || typeof Chart === "undefined") return;
+
+      const canvas = document.getElementById("navChart");
+      const returnCanvas = document.getElementById("navReturnChart");
+      const toolbar = document.getElementById("navChartToolbar");
+      const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const accent = dark ? "#4da3ff" : "#0b69ff";
+      const accentIdx = dark ? "#f0b429" : "#b45309";
+      const colorUp = getComputedStyle(document.documentElement).getPropertyValue("--up").trim() || "#f85149";
+      const colorDown = getComputedStyle(document.documentElement).getPropertyValue("--down").trim() || "#3fb950";
+      const grid = dark ? "rgba(154,167,181,0.2)" : "rgba(92,107,122,0.25)";
+      const text = dark ? "#9aa7b5" : "#5c6b7a";
+
+      function cutoff(range) {
+        if (range === "all") return null;
+        const last = ALL[ALL.length - 1].d;
+        const end = new Date(last + "T00:00:00");
+        const days = { "1m": 31, "3m": 92, "6m": 183, "1y": 366, "3y": 1096 }[range] || 366;
+        const start = new Date(end);
+        start.setDate(start.getDate() - days);
+        return start;
+      }
+
+      function slice(range) {
+        const min = cutoff(range);
+        if (!min) return ALL;
+        return ALL.filter((p) => new Date(p.d + "T00:00:00") >= min);
+      }
+
+      function returnSeries(data) {
+        let baseNav = null;
+        let baseIdx = null;
+        for (const p of data) {
+          if (p.v != null && p.idx != null) {
+            baseNav = p.v;
+            baseIdx = p.idx;
+            break;
+          }
+        }
+        const fundPct = [];
+        const idxPct = [];
+        for (const p of data) {
+          if (baseNav != null && p.v != null) {
+            fundPct.push(((p.v / baseNav) - 1) * 100);
+          } else {
+            fundPct.push(null);
+          }
+          if (baseIdx != null && p.idx != null) {
+            idxPct.push(((p.idx / baseIdx) - 1) * 100);
+          } else {
+            idxPct.push(null);
+          }
+        }
+        return { fundPct, idxPct, hasIdx: baseIdx != null };
+      }
+
+      const fundRetEl = document.getElementById("navFundPeriodRet");
+      const idxRetEl = document.getElementById("navIdxPeriodRet");
+
+      function periodReturns(data) {
+        if (!data.length) return { fund: null, idx: null };
+        let fund = null;
+        const v0 = data[0].v;
+        const v1 = data[data.length - 1].v;
+        if (v0 != null && v1 != null && v0 !== 0) {
+          fund = ((v1 / v0) - 1) * 100;
+        }
+        const idxPts = data.filter((p) => p.idx != null);
+        let idx = null;
+        if (idxPts.length >= 2) {
+          const i0 = idxPts[0].idx;
+          const i1 = idxPts[idxPts.length - 1].idx;
+          if (i0) idx = ((i1 / i0) - 1) * 100;
+        }
+        return { fund, idx };
+      }
+
+      function setRetEl(el, pct) {
+        if (!el) return;
+        el.classList.remove("up", "down", "flat");
+        if (pct == null || Number.isNaN(pct)) {
+          el.textContent = "—";
+          el.classList.add("flat");
+          return;
+        }
+        el.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
+        if (pct > 0) el.classList.add("up");
+        else if (pct < 0) el.classList.add("down");
+        else el.classList.add("flat");
+      }
+
+      function updatePeriodStats(data) {
+        const { fund, idx } = periodReturns(data);
+        setRetEl(fundRetEl, fund);
+        setRetEl(idxRetEl, idx);
+      }
+
+      const chartOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: {
+            ticks: { color: text, maxTicksLimit: 8 },
+            grid: { color: grid },
+          },
+          y: {
+            ticks: { color: text },
+            grid: { color: grid },
+          },
+        },
+      };
+
+      let navChart;
+      let returnChart;
+      function render(range) {
+        const data = slice(range);
+        updatePeriodStats(data);
+        const labels = data.map((p) => p.d);
+        const values = data.map((p) => p.v);
+        const pr = data.length > 120 ? 0 : 2;
+        if (navChart) navChart.destroy();
+        navChart = new Chart(canvas, {
+          type: "line",
+          data: {
+            labels,
+            datasets: [{
+              label: "单位净值",
+              data: values,
+              borderColor: accent,
+              backgroundColor: dark ? "rgba(77,163,255,0.12)" : "rgba(11,105,255,0.1)",
+              fill: true,
+              tension: 0.15,
+              pointRadius: pr,
+              pointHoverRadius: 4,
+              borderWidth: 2,
+            }],
+          },
+          options: {
+            ...chartOpts,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => "净值 " + Number(ctx.parsed.y).toFixed(4),
+                },
+              },
+            },
+          },
+        });
+
+        const { fundPct, idxPct, hasIdx } = returnSeries(data);
+        const lastFund = fundPct.length ? fundPct[fundPct.length - 1] : null;
+        const fundLineColor = lastFund != null && lastFund < 0 ? colorDown : colorUp;
+        const idxLineColor = accentIdx;
+        const datasets = [{
+          label: "基金累计收益率",
+          data: fundPct,
+          borderColor: fundLineColor,
+          backgroundColor: "transparent",
+          tension: 0.15,
+          pointRadius: pr,
+          pointHoverRadius: 4,
+          borderWidth: 2,
+        }];
+        if (hasIdx) {
+          datasets.push({
+            label: "沪深300累计收益率",
+            data: idxPct,
+            borderColor: idxLineColor,
+            backgroundColor: "transparent",
+            tension: 0.15,
+            pointRadius: pr,
+            pointHoverRadius: 4,
+            borderWidth: 2,
+          });
+        }
+        if (returnChart) returnChart.destroy();
+        returnChart = new Chart(returnCanvas, {
+          type: "line",
+          data: { labels, datasets },
+          options: {
+            ...chartOpts,
+            plugins: {
+              legend: {
+                display: true,
+                labels: { color: text, boxWidth: 12 },
+              },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const y = ctx.parsed.y;
+                    if (y == null || Number.isNaN(y)) return ctx.dataset.label + " —";
+                    return ctx.dataset.label + " " + y.toFixed(2) + "%";
+                  },
+                },
+              },
+            },
+            scales: {
+              ...chartOpts.scales,
+              y: {
+                ...chartOpts.scales.y,
+                ticks: {
+                  color: text,
+                  callback: (v) => v + "%",
+                },
+              },
+            },
+          },
+        });
+      }
+
+      toolbar.querySelectorAll("button[data-range]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          toolbar.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          render(btn.dataset.range);
+        });
+      });
+      render("1y");
+    })();
+  </script>
+  {% endif %}
+  {% if rank_chart_json != "[]" %}
+  <script>
+    (function () {
+      const ALL = {{ rank_chart_json | safe }};
+      const canvas = document.getElementById("rankChart");
+      const toolbar = document.getElementById("rankChartToolbar");
+      if (!ALL.length || !canvas || typeof Chart === "undefined") return;
+
+      const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const accent = dark ? "#4da3ff" : "#0b69ff";
+      const accent2 = dark ? "#7ee787" : "#1a7f37";
+      const grid = dark ? "rgba(154,167,181,0.2)" : "rgba(92,107,122,0.25)";
+      const text = dark ? "#9aa7b5" : "#5c6b7a";
+
+      function cutoff(range) {
+        if (range === "all") return null;
+        const last = ALL[ALL.length - 1].d;
+        const end = new Date(last + "T00:00:00");
+        const days = { "1y": 366, "3y": 1096 }[range] || 366;
+        const start = new Date(end);
+        start.setDate(start.getDate() - days);
+        return start;
+      }
+
+      function slice(range) {
+        const min = cutoff(range);
+        if (!min) return ALL;
+        return ALL.filter((p) => new Date(p.d + "T00:00:00") >= min);
+      }
+
+      let chart;
+      function render(range) {
+        const data = slice(range);
+        const labels = data.map((p) => p.d);
+        if (chart) chart.destroy();
+        chart = new Chart(canvas, {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "同类排名",
+                data: data.map((p) => p.type),
+                borderColor: accent,
+                tension: 0.15,
+                pointRadius: data.length > 120 ? 0 : 2,
+                borderWidth: 2,
+              },
+              {
+                label: "全市场排名",
+                data: data.map((p) => p.total),
+                borderColor: accent2,
+                tension: 0.15,
+                pointRadius: data.length > 120 ? 0 : 2,
+                borderWidth: 2,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              legend: { labels: { color: text } },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => ctx.dataset.label + " 第 " + ctx.parsed.y + " 名",
+                },
+              },
+            },
+            scales: {
+              x: { ticks: { color: text, maxTicksLimit: 8 }, grid: { color: grid } },
+              y: {
+                reverse: true,
+                ticks: { color: text },
+                grid: { color: grid },
+                title: { display: true, text: "名次（越小越强）", color: text },
+              },
+            },
+          },
+        });
+      }
+
+      toolbar.querySelectorAll("button[data-range]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          toolbar.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          render(btn.dataset.range);
+        });
+      });
+      render("1y");
+    })();
+  </script>
+  {% endif %}
+</body>
+</html>

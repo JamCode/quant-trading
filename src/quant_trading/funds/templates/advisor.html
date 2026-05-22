@@ -1,0 +1,355 @@
+{% from '_fund_theme.html' import palette_root, palette_light %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>基金 AI 助手</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --panel: #1a2230;
+      --text: #e7ecf3;
+      --muted: #9aa7b5;
+      --accent: #4da3ff;
+      --border: #2a3545;
+{{ palette_root() }}
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1b2430;
+        --muted: #5c6b7a;
+        --accent: #0b69ff;
+        --border: #e1e6ed;
+{{ palette_light() }}
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header, main { max-width: 900px; margin: 0 auto; }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    main { padding: 1rem 1.5rem 2rem; }
+    a { color: var(--accent); text-decoration: none; }
+    h1 { margin: 0.35rem 0; font-size: 1.35rem; }
+    .sub { margin: 0; font-size: 0.875rem; color: var(--muted); }
+    .nav-links { font-size: 0.875rem; margin-bottom: 0.5rem; }
+    .nav-links a { margin-right: 1rem; }
+    section {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    h2 { margin: 0 0 0.75rem; font-size: 0.95rem; }
+    .hint { font-size: 0.8rem; color: var(--muted); margin: 0 0 0.5rem; }
+    .chip-group { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+    .chip {
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 0.3rem 0.75rem;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .chip.active {
+      border-color: var(--accent);
+      background: rgba(77, 163, 255, 0.15);
+    }
+    .chip.single.active { font-weight: 600; }
+    label.dim { display: block; font-size: 0.75rem; color: var(--muted); margin: 0.5rem 0 0.25rem; }
+    textarea, #paste-input {
+      width: 100%;
+      min-height: 10rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 0.65rem 0.75rem;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      resize: vertical;
+      font-family: inherit;
+    }
+    #prompt-preview { min-height: 14rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.65rem; }
+    button, .btn {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(77, 163, 255, 0.18), rgba(77, 163, 255, 0.08));
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.45rem 0.85rem;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.875rem;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary {
+      background: transparent;
+      font-weight: 500;
+    }
+    details { font-size: 0.85rem; color: var(--muted); }
+    details summary { cursor: pointer; color: var(--accent); }
+    ol.steps { margin: 0.5rem 0 0 1.1rem; padding: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { padding: 0.5rem; border-bottom: 1px solid var(--border); text-align: left; }
+    th { font-size: 0.72rem; color: var(--muted); }
+    .muted { color: var(--muted); }
+    .err { color: var(--error, #f85149); font-size: 0.85rem; margin-top: 0.5rem; }
+    .footnote {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px dashed var(--border);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .copy-ok { font-size: 0.8rem; color: var(--muted); margin-left: 0.5rem; }
+  </style>
+</head>
+<body>
+  {% set bp = (url_prefix ~ '/') if url_prefix else '/' %}
+  <header>
+    <div class="nav-links">
+      <a href="{{ bp }}">行业仪表盘</a>
+      <a href="{{ bp }}funds">基金全目录</a>
+      <a href="{{ bp }}sectors">行业资金流向</a>
+      <a href="{{ bp }}crawler">爬虫任务</a>
+    </div>
+    <h1>基金 AI 助手</h1>
+    <p class="sub">生成提示词 → 在 DeepSeek 网页联网提问 → 粘贴回答并解析基金代码</p>
+  </header>
+  <main>
+    <section aria-labelledby="tags-heading">
+      <h2 id="tags-heading">① 收窄范围（均可不选）</h2>
+      <p class="hint">点击标签选中/取消；不选则生成通用版提示词。</p>
+      <label class="dim">行业 / 主题（可多选）</label>
+      <div class="chip-group" data-group="industries">
+        {% for v in tag_options.industries %}
+        <button type="button" class="chip" data-value="{{ v }}">{{ v }}</button>
+        {% endfor %}
+      </div>
+      <label class="dim">基金类型（可多选）</label>
+      <div class="chip-group" data-group="fund_types">
+        {% for v in tag_options.fund_types %}
+        <button type="button" class="chip" data-value="{{ v }}">{{ v }}</button>
+        {% endfor %}
+      </div>
+      <label class="dim">风格（单选，再点取消）</label>
+      <div class="chip-group" data-group="style" data-single="1">
+        {% for v in tag_options.styles %}
+        <button type="button" class="chip single" data-value="{{ v }}">{{ v }}</button>
+        {% endfor %}
+      </div>
+      <label class="dim">观察侧重（单选，再点取消）</label>
+      <div class="chip-group" data-group="observation" data-single="1">
+        {% for v in tag_options.observations %}
+        <button type="button" class="chip single" data-value="{{ v }}">{{ v }}</button>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section aria-labelledby="prompt-heading">
+      <h2 id="prompt-heading">② 提示词</h2>
+      <p class="hint">可直接编辑。点击标签会按当前选择重新生成并覆盖下方内容。</p>
+      <textarea id="prompt-preview" aria-label="提示词（可编辑）">{{ initial_prompt }}</textarea>
+      <p id="prompt-status" class="hint" aria-live="polite"></p>
+      <div class="actions">
+        <button type="button" id="btn-copy">复制提示词</button>
+        <button type="button" id="btn-regen" class="btn secondary">按标签重新生成</button>
+        <span id="copy-ok" class="copy-ok" hidden>已复制</span>
+      </div>
+      <details style="margin-top:0.75rem">
+        <summary>如何在 DeepSeek 使用</summary>
+        <ol class="steps">
+          <li>打开 <a href="https://chat.deepseek.com/" target="_blank" rel="noopener">chat.deepseek.com</a></li>
+          <li>在输入框旁开启 <strong>联网搜索</strong></li>
+          <li>粘贴上方提示词并发送</li>
+          <li>将 AI 完整回复复制到下方粘贴区</li>
+        </ol>
+      </details>
+    </section>
+
+    <section aria-labelledby="paste-heading">
+      <h2 id="paste-heading">③ 粘贴 AI 回答</h2>
+      <textarea id="paste-input" placeholder="将 DeepSeek 的完整回复粘贴到这里…" aria-label="粘贴 AI 回答"></textarea>
+      <div class="actions">
+        <button type="button" id="btn-parse">解析基金代码</button>
+      </div>
+      <p id="parse-err" class="err" hidden></p>
+    </section>
+
+    <section aria-labelledby="result-heading" id="result-section" hidden>
+      <h2 id="result-heading">④ 解析结果</h2>
+      <table>
+        <thead>
+          <tr><th>代码</th><th>名称</th><th>目录</th><th></th></tr>
+        </thead>
+        <tbody id="result-body"></tbody>
+      </table>
+    </section>
+
+    <p class="footnote">
+      本站仅生成提示词并解析基金代码，不调用大模型。AI 生成内容仅供参考，不构成投资建议；请自行核实来源与基金信息。
+    </p>
+  </main>
+  <script>
+    (function () {
+      const apiBase = {{ advisor_api_base|tojson }};
+      const promptUrl = apiBase + "/prompt";
+      const parseUrl = apiBase + "/parse";
+      const promptEl = document.getElementById("prompt-preview");
+      const promptStatus = document.getElementById("prompt-status");
+      const pasteEl = document.getElementById("paste-input");
+      const resultSection = document.getElementById("result-section");
+      const resultBody = document.getElementById("result-body");
+      const parseErr = document.getElementById("parse-err");
+      const copyOk = document.getElementById("copy-ok");
+
+      const state = {
+        industries: [],
+        fund_types: [],
+        style: "",
+        observation: "",
+      };
+
+      function selectedIn(group) {
+        return Array.from(group.querySelectorAll(".chip.active")).map((b) => b.dataset.value);
+      }
+
+      function buildQuery() {
+        const q = new URLSearchParams();
+        state.industries.forEach((v) => q.append("industries", v));
+        state.fund_types.forEach((v) => q.append("fund_types", v));
+        if (state.style) q.set("style", state.style);
+        if (state.observation) q.set("observation", state.observation);
+        return q.toString();
+      }
+
+      let refreshing = false;
+      async function refreshPrompt() {
+        if (refreshing) return;
+        refreshing = true;
+        promptStatus.textContent = "正在根据标签更新提示词…";
+        try {
+          const qs = buildQuery();
+          const url = qs ? promptUrl + "?" + qs : promptUrl;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const data = await res.json();
+          promptEl.value = data.prompt || "";
+          promptStatus.textContent = "已根据当前标签更新";
+        } catch (e) {
+          console.error(e);
+          promptStatus.textContent = "提示词更新失败，请刷新页面重试";
+        } finally {
+          refreshing = false;
+        }
+      }
+
+      document.querySelectorAll(".chip-group").forEach((group) => {
+        const key = group.dataset.group;
+        const single = group.dataset.single === "1";
+        group.addEventListener("click", (ev) => {
+          const btn = ev.target.closest(".chip");
+          if (!btn) return;
+          ev.preventDefault();
+          if (single) {
+            const wasActive = btn.classList.contains("active");
+            group.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
+            if (!wasActive) btn.classList.add("active");
+            state[key] = wasActive ? "" : btn.dataset.value;
+          } else {
+            btn.classList.toggle("active");
+            state[key] = selectedIn(group);
+          }
+          refreshPrompt();
+        });
+      });
+
+      document.getElementById("btn-regen").addEventListener("click", () => refreshPrompt());
+
+      document.getElementById("btn-copy").addEventListener("click", async () => {
+        const text = promptEl.value;
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          promptEl.select();
+          document.execCommand("copy");
+        }
+        copyOk.hidden = false;
+        setTimeout(() => { copyOk.hidden = true; }, 2000);
+      });
+
+      document.getElementById("btn-parse").addEventListener("click", async () => {
+        parseErr.hidden = true;
+        resultSection.hidden = true;
+        resultBody.innerHTML = "";
+        const text = pasteEl.value.trim();
+        if (!text) {
+          parseErr.textContent = "请先粘贴 AI 回答";
+          parseErr.hidden = false;
+          return;
+        }
+        const btn = document.getElementById("btn-parse");
+        btn.disabled = true;
+        try {
+          const res = await fetch(parseUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            parseErr.textContent = data.detail || "解析失败";
+            parseErr.hidden = false;
+            return;
+          }
+          const items = data.items || [];
+          if (!items.length) {
+            parseErr.textContent = "未识别到 6 位基金代码，请检查粘贴内容";
+            parseErr.hidden = false;
+            return;
+          }
+          items.forEach((it) => {
+            const tr = document.createElement("tr");
+            const name = it.name || "—";
+            const catalog = it.in_catalog ? "在库" : "未在基金目录";
+            let link = "";
+            if (it.in_catalog && it.detail_url) {
+              link = '<a href="' + it.detail_url + '">查看详情</a>';
+            }
+            tr.innerHTML =
+              "<td><code>" + it.code + "</code></td>" +
+              "<td>" + name + "</td>" +
+              '<td class="muted">' + catalog + "</td>" +
+              "<td>" + link + "</td>";
+            resultBody.appendChild(tr);
+          });
+          resultSection.hidden = false;
+        } catch (e) {
+          parseErr.textContent = "网络错误，请稍后重试";
+          parseErr.hidden = false;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
