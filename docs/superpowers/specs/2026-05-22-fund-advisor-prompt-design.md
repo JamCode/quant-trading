@@ -1,89 +1,89 @@
-# Fund AI Advisor (Prompt Builder) — Design Spec
+# 基金 AI 助手（提示词生成器）— 设计说明
 
-**Date:** 2026-05-22  
-**Status:** Approved  
-**Route:** `/advisor`  
-**Nav label:** 基金 AI 助手
+**日期：** 2026-05-22  
+**状态：** 已批准  
+**路由：** `/advisor`  
+**导航名称：** 基金 AI 助手
 
-## Summary
+## 概述
 
-Add a lightweight page that (1) builds a high-quality Chinese prompt from optional tags for users to paste into DeepSeek Chat (with web search enabled), and (2) parses pasted AI responses to extract 6-digit fund codes and link to in-catalog fund detail pages. No LLM or search API keys on the server.
+新增轻量页面：（1）根据可选标签生成高质量中文提示词，供用户复制到 DeepSeek 网页对话（需开启联网搜索）；（2）用户将 AI 回复粘贴回本页后，解析 6 位基金代码，若在基金目录中则链接到详情页 `/funds/{code}`。服务端**不**调用大模型或搜索 API，无需相关 Key。
 
-## Goals
+## 目标
 
-- Help users ask external AI: “What funds are worth watching recently?” with clear structure and constraints.
-- Optional tags narrow scope (industry, fund type, style, horizon) without requiring selection.
-- After AI responds elsewhere, paste back to resolve fund codes against the local `funds` table and link to `/funds/{code}` when present.
+- 帮助用户向外部 AI 提问「最近可关注哪些基金」，且问题结构清晰、约束明确。
+- 标签（行业、基金类型、风格、观察侧重）均为**可选**，用于收窄范围。
+- AI 在外部回答后，用户粘贴回来；本站根据本地 `funds` 表解析代码，在库则跳转详情。
 
-## Non-Goals
+## 明确不做
 
-- Server-side DeepSeek or search API integration.
-- Multi-turn chat, conversation history, or stored pasted content.
-- Injecting MySQL dashboard metrics (sector flow, peer rank, etc.) into prompts.
-- User accounts, favorites, or rate limiting in v1 (optional later for public ECS).
+- 服务端集成 DeepSeek 或搜索 API。
+- 多轮对话、历史记录、持久化粘贴内容。
+- 将 MySQL 仪表盘指标（行业资金流、同类排名等）写入提示词。
+- v1 不做用户账号、收藏、限流（日后 ECS 公网可再加 IP 限流）。
 
-## User Flow
+## 用户流程
 
-1. Open `/advisor`.
-2. Optionally select tags (all optional).
-3. Review generated prompt; click **复制提示词**.
-4. Follow collapsed instructions: open https://chat.deepseek.com → enable **联网搜索** → paste and send.
-5. Paste AI reply into textarea; click **解析基金代码**.
-6. See list: code, name (if in DB), link to detail or “未在基金目录”.
+1. 打开 `/advisor`。
+2. 可选选择标签（均可不选）。
+3. 查看生成的提示词，点击 **复制提示词**。
+4. 按折叠说明操作：打开 https://chat.deepseek.com → 开启 **联网搜索** → 粘贴并发送。
+5. 将 AI 回复粘贴到文本框，点击 **解析基金代码**。
+6. 查看列表：代码、名称（库内有）、详情链接或「未在基金目录」。
 
-## Page Layout
+## 页面布局
 
-- **Section ① Tags:** chips/dropdowns for industry (multi), fund type, style, observation focus.
-- **Section ② Prompt:** read-only preview, updates when tags change.
-- **Section ③ Copy** + collapsible usage steps for DeepSeek web.
-- **Section ④ Paste** textarea + parse button.
-- **Section ⑤ Results** table/cards with `in_catalog` and `detail_url`.
-- **Footer:** disclaimer — AI-generated, not investment advice.
+- **区块 ① 标签：** 行业（多选 chip）、基金类型、风格、观察侧重。
+- **区块 ② 提示词：** 只读预览，随标签变更更新。
+- **区块 ③ 复制** + 可折叠的 DeepSeek 网页使用步骤。
+- **区块 ④ 粘贴区：** 多行文本 + 解析按钮。
+- **区块 ⑤ 结果：** 表格或卡片，展示 `in_catalog`、`detail_url`。
+- **页脚：** 免责声明 — AI 生成内容，不构成投资建议。
 
-Site-wide nav (dashboard, funds catalog, sectors, etc.) gains link: **基金 AI 助手** → `{url_prefix}/advisor`.
+全站导航（仪表盘、基金目录、行业榜等）增加：**基金 AI 助手** → `{url_prefix}/advisor`。
 
-## Tag Dimensions
+## 标签维度
 
-| Dimension | UI | Prompt clause (when set) |
-|-----------|-----|---------------------------|
-| Industry / theme | Multi-select chips | 重点关注行业/主题：{values} |
-| Fund type | Multi or single select | 基金类型偏好：{values} |
-| Style | 偏进攻 / 偏稳健 | 风险风格：{value} |
-| Observation | 短期热点 / 中长期配置 | 观察周期倾向：{value} |
+| 维度 | 界面 | 写入提示词（选中时） |
+|------|------|----------------------|
+| 行业/主题 | 多选 chip | 重点关注行业/主题：{values} |
+| 基金类型 | 单选或多选 | 基金类型偏好：{values} |
+| 风格 | 偏进攻 / 偏稳健 | 风险风格：{value} |
+| 观察侧重 | 短期热点 / 中长期配置 | 观察周期倾向：{value} |
 
-Preset chip values (v1, static in template or constants):
+v1 预设选项（模板或常量写死，后续可扩展）：
 
-- Industries: 新能源, 医药, 科技, 消费, 红利, 军工, 半导体 (extensible list)
-- Fund types: 股票型, 混合型, 指数型, 债券型, QDII
-- Style: 偏进攻, 偏稳健
-- Observation: 短期热点, 中长期配置
+- 行业：新能源、医药、科技、消费、红利、军工、半导体
+- 基金类型：股票型、混合型、指数型、债券型、QDII
+- 风格：偏进攻、偏稳健
+- 观察侧重：短期热点、中长期配置
 
-## Prompt Template (Server-Side)
+## 提示词模板（服务端生成）
 
-Fixed instructions (always included):
+固定要求（始终包含）：
 
-- Role: 公募基金研究助手；**不构成投资建议**。
-- Use **recent** public analysis (broker views, financial media depth, public fund report summaries).
-- Structure: 2–4 sentences on sector/market logic, then **3–5** funds.
-- Per fund: 6-digit code, full name, rationale, one-line risk.
-- Cite checkable sources by title; **do not fabricate URLs**.
-- Append tag clauses only for selected dimensions.
+- 角色：公募基金研究助手；**不构成投资建议**。
+- 结合**近期**公开分析（券商观点、财经深度、基金季报公开信息等）。
+- 结构：先 2～4 句板块/市场逻辑，再推荐 **3～5** 只基金。
+- 每只：6 位代码、全称、关注逻辑、主要风险一句。
+- 引用可查来源（标题即可）；**勿编造链接**。
+- 仅对选中的标签维度追加对应中文句。
 
-Default user intent embedded in prompt:
+默认用户意图（嵌入提示词）：
 
 > 结合近期权威公开分析，推荐 3～5 只值得关注的公募基金，并说明推荐逻辑。
 
-No MySQL metrics in prompt body.
+提示词正文中**不**注入 MySQL 指标数据。
 
 ## API
 
 ### `GET /api/advisor/prompt`
 
-Query params (optional, repeated or comma-separated per implementation):
+查询参数（均可选；实现上可用重复参数或逗号分隔）：
 
-- `industries`, `fund_types`, `style`, `observation`
+- `industries`、`fund_types`、`style`、`observation`
 
-Response:
+响应：
 
 ```json
 { "prompt": "..." }
@@ -91,13 +91,13 @@ Response:
 
 ### `POST /api/advisor/parse`
 
-Request:
+请求体：
 
 ```json
-{ "text": "<pasted AI response>" }
+{ "text": "<用户粘贴的 AI 回复>" }
 ```
 
-Response:
+响应：
 
 ```json
 {
@@ -118,53 +118,58 @@ Response:
 }
 ```
 
-- Extract `\b[0-9]{6}\b`, dedupe, preserve first-seen order.
-- Batch `SELECT code, short_name AS name FROM funds WHERE code IN (...)`.
-- `detail_url` must respect `url_prefix` from app config (same as other pages).
+字段说明：
 
-Errors:
+- `code`：6 位基金代码  
+- `name`：目录中的简称，不在库为 `null`  
+- `in_catalog`：是否在 `funds` 表中  
+- `detail_url`：在库时的详情路径，须带 `url_prefix`（与其它页面一致）
 
-- Empty `text` → 400 with message.
-- No codes found → 200 with `items: []` and client shows friendly empty state.
+处理规则：
 
-## Implementation Modules
+- 正则提取 `\b[0-9]{6}\b`，去重，保持首次出现顺序。
+- 批量查询：`SELECT code, short_name AS name FROM funds WHERE code IN (...)`。
+- `text` 为空 → HTTP 400 + 中文错误信息。
+- 未识别到代码 → HTTP 200，`items: []`，前端提示友好文案。
 
-| Module | Responsibility |
-|--------|----------------|
-| `fund_platform/advisor_prompt.py` | Build prompt string from tag selections |
-| `fund_platform/advisor_parse.py` | Regex extract + batch catalog lookup |
-| `quant_trading/funds/app.py` | `GET /advisor`, `GET /api/advisor/prompt`, `POST /api/advisor/parse` |
-| `quant_trading/funds/templates/advisor.html` | UI, copy button, fetch/parse JS |
+## 实现模块
 
-Reuse: `fund_platform.queries` or new `get_funds_by_codes(conn, codes: list[str])` for batch lookup.
+| 模块 | 职责 |
+|------|------|
+| `fund_platform/advisor_prompt.py` | 根据标签拼装提示词 |
+| `fund_platform/advisor_parse.py` | 正则提取 + 批量查目录 |
+| `quant_trading/funds/app.py` | `GET /advisor`、`GET /api/advisor/prompt`、`POST /api/advisor/parse` |
+| `quant_trading/funds/templates/advisor.html` | 页面、复制、请求解析的 JS |
 
-## Frontend Behavior
+复用或新增：`get_funds_by_codes(conn, codes)` 批量查库（可放在 `fund_platform/queries`）。
 
-- Tag change → refresh prompt via API or client-side mirror of template (prefer API for single source of truth).
-- `navigator.clipboard.writeText` for copy; fallback `select` + execCommand if needed.
-- Parse: POST JSON, render results; link opens `/funds/{code}` in same tab.
-- Loading/disabled states on parse button.
+## 前端行为
 
-## Security & Privacy
+- 标签变更 → 调用 API 刷新提示词（推荐，单一数据源）；或客户端镜像模板（二选一，优先 API）。
+- 复制：`navigator.clipboard.writeText`；必要时降级为选中文本 + `execCommand('copy')`。
+- 解析：POST JSON，渲染结果；详情链接同页打开。
+- 解析中禁用按钮并显示 loading。
 
-- No third-party API keys.
-- Pasted text not persisted in v1.
-- Parse endpoint is stateless; optional future rate limit on ECS.
+## 安全与隐私
 
-## Testing Checklist
+- 无第三方 API Key。
+- v1 不存储用户粘贴内容。
+- 解析接口无状态；公网部署时可后续加限流。
 
-- [ ] Prompt with no tags includes base instructions only.
-- [ ] Each tag dimension appends correct Chinese clause.
-- [ ] Copy works in modern browsers.
-- [ ] Parse: two in-catalog codes + one unknown → correct `in_catalog` and URLs.
-- [ ] Parse: empty paste → appropriate message.
-- [ ] `url_prefix` prefix applied to `detail_url` and nav links.
+## 测试清单
 
-## Approved Decisions (2026-05-22)
+- [ ] 不选标签时，提示词仅含基础固定要求。
+- [ ] 各标签维度选中后，对应中文句正确追加。
+- [ ] 复制按钮在常见浏览器可用。
+- [ ] 解析：2 个在库代码 + 1 个不在库 → `in_catalog` 与链接正确。
+- [ ] 空粘贴 → 合适提示。
+- [ ] 配置 `url_prefix` 时，`detail_url` 与导航链接前缀正确。
 
-- Interaction: prompt builder only (not in-app LLM).
-- Tags: optional (scheme 1).
-- External analysis via user’s DeepSeek web + 联网搜索.
-- Output expectation communicated in prompt: 3–5 funds with clear logic.
-- Post-parse catalog linking: **yes** (option B).
-- Route `/advisor`, nav **基金 AI 助手**.
+## 已确认决策（2026-05-22）
+
+- 交互：仅提示词生成器，不在站内调大模型。
+- 标签：全部可选（方案 1）。
+- 分析依据：用户自行在 DeepSeek 网页使用联网搜索。
+- 提示词约定输出：3～5 只基金，逻辑说清楚。
+- 粘贴解析后链接目录：**是**（方案 B）。
+- 路由 `/advisor`，导航 **基金 AI 助手**。
