@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ page_title }}</title>
+  <link rel="stylesheet" href="{{ bp }}static/fund-app/theme.css" />
+  <script>
+    window.__FUND_APP__ = {{ boot_json | safe }};
+  </script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="主导航"></aside>
+    <div class="app-body">
+      <header class="app-header">
+        <h1 id="view-title">{{ page_title }}</h1>
+        <p class="sync-hint" id="sync-hint"></p>
+      </header>
+      <main id="app-main" class="app-main" aria-live="polite"></main>
+    </div>
+  </div>
+  <div id="drawer-root" class="drawer-root hidden" aria-hidden="true">
+    <div class="drawer-backdrop" data-drawer-close></div>
+    <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <header class="drawer-header">
+        <h2 id="drawer-title"></h2>
+        <button type="button" class="drawer-close" data-drawer-close aria-label="关闭">×</button>
+      </header>
+      <div id="drawer-body" class="drawer-body"></div>
+    </aside>
+  </div>
+  <script type="module" src="{{ bp }}static/fund-app/main.js"></script>
+</body>
+</html>
