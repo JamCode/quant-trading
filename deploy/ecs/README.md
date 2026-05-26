@@ -134,6 +134,12 @@ python -c "from fund_platform.market_index import backfill_market_index_daily; i
 
 将 `deploy/ecs/nginx-location-snippet.conf` 合并进现有站点配置（例如吉他项目的 `guitar-server.conf`），对外路径可按域名调整；改完后 **`nginx -t && reload`**。
 
+OpenClaw Control UI（本机 Gateway `127.0.0.1:18789`，需在 `~/.openclaw/openclaw.json` 设置 `gateway.controlUi.basePath: "/openclaw"`）：
+
+- 片段：`deploy/ecs/nginx-openclaw-snippet.conf` → 对外 `https://wanghanai.xyz/openclaw/`
+- 访问：页面 `https://wanghanai.xyz/openclaw/#token=<TOKEN>`（`#token` 比 `?token` 更安全）；WebSocket 填 **`wss://wanghanai.xyz/__openclaw__/ws`**（不是 `/openclaw`）
+- token 在 ECS：`python3 -c 'import json; print(json.load(open("/home/wanghan/.openclaw/openclaw.json"))["gateway"]["auth"]["token"])'`
+
 ## 防火墙与安全组
 
 若仅本机 Nginx 反代：安全组可不对外开放 `8010`，只保留 `80/443`。若临时调试可放行你的 IP。

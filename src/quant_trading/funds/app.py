@@ -18,6 +18,8 @@ from fund_platform import advisor_prompt
 from fund_platform import crawler_queries
 from fund_platform import dashboard_queries
 from fund_platform import fund_catalog_queries
+from fund_platform import index_valuation_queries
+from fund_platform import industry_pe_queries
 from fund_platform import queries
 from fund_platform import sector_constituents
 from fund_platform import sector_queries
@@ -176,6 +178,240 @@ def api_crawler_runs(
             offset=offset,
         ),
     }
+
+
+@app.get("/api/valuation/indices")
+def api_valuation_indices(
+    conn=Depends(get_conn),
+    region: Optional[str] = Query(default=None, description="cn|hk|us"),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    return {
+        "items": index_valuation_queries.list_latest_index_valuation(
+            conn, region=region, limit=limit
+        ),
+    }
+
+
+@app.get("/api/valuation/indices/history")
+def api_valuation_indices_history(
+    conn=Depends(get_conn),
+    region: str = Query(..., description="cn|hk|us"),
+    index_code: str = Query(...),
+    limit: int = Query(default=730, ge=1, le=5000),
+):
+    history = index_valuation_queries.query_index_valuation_history(
+        conn,
+        region=region,
+        index_code=index_code,
+        limit=limit,
+    )
+    name = history[-1]["index_name"] if history else index_code
+    return {
+        "region": region.strip().lower(),
+        "index_code": index_code.strip(),
+        "index_name": name,
+        "points": history,
+    }
+
+
+def _valuation_chart_points(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    points: list[dict[str, Any]] = []
+    for row in history:
+        pt: dict[str, Any] = {"d": row["trade_date"]}
+        if row.get("pe_ttm") is not None:
+            pt["ttm"] = row["pe_ttm"]
+        if row.get("pe_static") is not None:
+            pt["static"] = row["pe_static"]
+        if row.get("pe_cape") is not None:
+            pt["cape"] = row["pe_cape"]
+        if len(pt) > 1:
+            points.append(pt)
+    return points
+
+
+def _pick_valuation_selection(
+    latest: list[dict[str, Any]],
+    *,
+    region: Optional[str],
+    index_code: Optional[str],
+) -> tuple[str, str, Optional[dict[str, Any]]]:
+    reg = (region or "cn").strip().lower()
+    code = (index_code or "").strip()
+    by_region = index_valuation_queries.group_latest_by_region(latest)
+    if code:
+        for item in latest:
+            if item.get("region") == reg and item.get("index_code") == code:
+                return reg, code, item
+    for item in by_region.get(reg) or []:
+        if item.get("index_code") == "000300.SH":
+            return reg, str(item["index_code"]), item
+    pool = by_region.get(reg) or []
+    if pool:
+        first = pool[0]
+        return reg, str(first["index_code"]), first
+    for fallback_reg in ("cn", "hk", "us"):
+        pool = by_region.get(fallback_reg) or []
+        if pool:
+            first = pool[0]
+            return fallback_reg, str(first["index_code"]), first
+    return reg, code or "000300.SH", None
+
+
+def _industry_pe_chart_points(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    points: list[dict[str, Any]] = []
+    for row in history:
+        pt: dict[str, Any] = {"d": row["trade_date"]}
+        if row.get("pe_weighted") is not None:
+            pt["weighted"] = row["pe_weighted"]
+        if row.get("pe_median") is not None:
+            pt["median"] = row["pe_median"]
+        if row.get("pe_avg") is not None:
+            pt["avg"] = row["pe_avg"]
+        if len(pt) > 1:
+            points.append(pt)
+    return points
+
+
+def _pick_industry_pe_selection(
+    latest: list[dict[str, Any]],
+    *,
+    industry_code: Optional[str],
+    default_level: int = 2,
+) -> tuple[str, Optional[dict[str, Any]]]:
+    code = (industry_code or "").strip()
+    if code:
+        for item in latest:
+            if item.get("industry_code") == code:
+                return code, item
+    pool = [x for x in latest if int(x.get("industry_level") or 0) == default_level]
+    if not pool:
+        pool = latest
+    if pool:
+        first = pool[0]
+        return str(first["industry_code"]), first
+    return code or "", None
+
+
+@app.get("/api/valuation/industry")
+def api_valuation_industry(
+    conn=Depends(get_conn),
+    industry_level: Optional[int] = Query(default=2, ge=1, le=4),
+    limit: int = Query(default=200, ge=1, le=500),
+):
+    return {
+        "trade_date": industry_pe_queries.latest_industry_pe_date(conn),
+        "items": industry_pe_queries.list_latest_industry_pe(
+            conn,
+            industry_level=industry_level,
+            limit=limit,
+        ),
+    }
+
+
+@app.get("/api/valuation/industry/history")
+def api_valuation_industry_history(
+    conn=Depends(get_conn),
+    industry_code: str = Query(...),
+    limit: int = Query(default=730, ge=1, le=5000),
+):
+    history = industry_pe_queries.query_industry_pe_history(
+        conn,
+        industry_code=industry_code,
+        limit=limit,
+    )
+    name = history[-1]["industry_name"] if history else industry_code
+    return {
+        "industry_code": industry_code.strip(),
+        "industry_name": name,
+        "points": history,
+    }
+
+
+@app.get("/valuation", response_class=HTMLResponse)
+def valuation_page(
+    request: Request,
+    conn=Depends(get_conn),
+    tab: str = Query(default="index"),
+    region: Optional[str] = Query(default="cn"),
+    index_code: Optional[str] = Query(default=None),
+    industry_code: Optional[str] = Query(default=None),
+    industry_level: int = Query(default=2, ge=1, le=4),
+    history_days: int = Query(default=730, ge=30, le=5000),
+):
+    active_tab = "industry" if tab.strip().lower() == "industry" else "index"
+    ctx: dict[str, Any] = {
+        "active_tab": active_tab,
+        "history_days": history_days,
+        "url_prefix": config.url_prefix(),
+    }
+    if active_tab == "industry":
+        latest_ind = industry_pe_queries.list_latest_industry_pe(
+            conn,
+            industry_level=industry_level,
+            limit=300,
+        )
+        sel_code, sel_meta = _pick_industry_pe_selection(
+            latest_ind,
+            industry_code=industry_code,
+            default_level=industry_level,
+        )
+        ind_history = industry_pe_queries.query_industry_pe_history(
+            conn,
+            industry_code=sel_code,
+            limit=history_days,
+        ) if sel_code else []
+        if sel_meta is None and ind_history:
+            sel_meta = ind_history[-1]
+        ctx.update(
+            {
+                "industry_level": industry_level,
+                "industry_latest": latest_ind,
+                "selected_industry_code": sel_code,
+                "selected_industry_meta": sel_meta,
+                "industry_pe_date": industry_pe_queries.latest_industry_pe_date(conn),
+                "industry_chart_json": json.dumps(
+                    _industry_pe_chart_points(ind_history),
+                    ensure_ascii=False,
+                ),
+                "has_industry_data": bool(latest_ind),
+                "has_index_data": False,
+            }
+        )
+    else:
+        latest = index_valuation_queries.list_latest_index_valuation(conn, limit=50)
+        grouped = index_valuation_queries.group_latest_by_region(latest)
+        sel_region, sel_code, sel_meta = _pick_valuation_selection(
+            latest, region=region, index_code=index_code
+        )
+        history = index_valuation_queries.query_index_valuation_history(
+            conn,
+            region=sel_region,
+            index_code=sel_code,
+            limit=history_days,
+        )
+        if sel_meta is None and history:
+            sel_meta = {
+                "index_name": history[-1].get("index_name"),
+                "trade_date": history[-1].get("trade_date"),
+                "source": history[-1].get("source"),
+                "pe_ttm": history[-1].get("pe_ttm"),
+                "pe_static": history[-1].get("pe_static"),
+                "pe_cape": history[-1].get("pe_cape"),
+            }
+        ctx.update(
+            {
+                "latest_by_region": grouped,
+                "selected_region": sel_region,
+                "selected_code": sel_code,
+                "selected_meta": sel_meta,
+                "chart_json": json.dumps(_valuation_chart_points(history), ensure_ascii=False),
+                "has_index_data": bool(latest),
+                "has_industry_data": False,
+                "industry_chart_json": "[]",
+            }
+        )
+    return templates.TemplateResponse(request, "valuation.html", ctx)
 
 
 @app.get("/crawler", response_class=HTMLResponse)

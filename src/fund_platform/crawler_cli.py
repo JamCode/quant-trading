@@ -16,6 +16,8 @@ from fund_platform import settings as fp_settings
 from fund_platform.crawler_jobs import run_scheduled_job, upsert_task_catalog
 from fund_platform.crawler_logging import setup_crawler_logging
 from fund_platform.fund_holdings_sync import run_fund_industry_pipeline
+from fund_platform.index_valuation import sync_index_valuation_daily
+from fund_platform.industry_pe import sync_industry_pe_cninfo_daily
 from fund_platform.market_index import (
     sync_market_index_daily_close,
     sync_market_index_intraday,
@@ -64,6 +66,14 @@ def _run_market_index_daily_global_job() -> dict[str, Any]:
 
 def _run_sector_flow_job() -> dict[str, Any]:
     return sync_sector_fund_flow_daily()
+
+
+def _run_index_valuation_job() -> dict[str, Any]:
+    return sync_index_valuation_daily()
+
+
+def _run_industry_pe_cninfo_job() -> dict[str, Any]:
+    return sync_industry_pe_cninfo_daily()
 
 
 def main() -> None:
@@ -180,6 +190,34 @@ def main() -> None:
         coalesce=True,
     )
     registered.add("market_index_daily_global")
+
+    scheduler.add_job(
+        _scheduled("index_valuation_daily_sync", _run_index_valuation_job),
+        CronTrigger(
+            day_of_week="mon-sat",
+            hour=fp_settings.index_valuation_cron_hour(),
+            minute=fp_settings.index_valuation_cron_minute(),
+        ),
+        id="index_valuation_daily_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    registered.add("index_valuation_daily_sync")
+
+    scheduler.add_job(
+        _scheduled("industry_pe_cninfo_daily_sync", _run_industry_pe_cninfo_job),
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour=fp_settings.industry_pe_cron_hour(),
+            minute=fp_settings.industry_pe_cron_minute(),
+        ),
+        id="industry_pe_cninfo_daily_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    registered.add("industry_pe_cninfo_daily_sync")
 
     upsert_task_catalog(registered=registered)
 

@@ -567,30 +567,55 @@ def sync_market_index_daily_close(
     *,
     scope: str = "all",
 ) -> dict[str, Any]:
-    """Persist EOD: scope=cn | global | all."""
+    """Persist EOD: scope=cn | global | hk | all.
+
+    Overseas indices use per-symbol daily K-line (+ Sina fallback), not the bulk
+    East Money spot list API (unstable from cloud hosts).
+    """
     td = trade_date or _now_cn().date()
     td_s = td.isoformat()
-    rows: list[dict[str, Any]] = []
-    try:
-        if scope in ("cn", "all"):
-            rows.extend(_filter_cn_watchlist(fetch_main_indices_em()))
-        if scope in ("global", "all", "hk"):
-            raw_g = fetch_global_indices_em()
-            if scope in ("global", "all") and global_watchlist():
-                rows.extend(_filter_global_watchlist(raw_g))
-            if scope in ("hk", "all") and hk_watchlist():
-                rows.extend(_filter_hk_watchlist(raw_g))
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("market index daily fetch failed scope=%s", scope)
-        return {"ok": False, "error": str(exc), "trade_date": td_s, "scope": scope}
+    daily_rows: list[dict[str, Any]] = []
+    errors: list[str] = []
 
-    if not rows:
-        return {"ok": False, "error": "no index rows", "trade_date": td_s, "scope": scope}
+    if scope in ("cn", "all"):
+        cn_rows, cn_err = _fetch_cn_daily_eod(td)
+        daily_rows.extend(cn_rows)
+        errors.extend(cn_err)
+
+    overseas_names: list[str] = []
+    if scope in ("global", "all"):
+        overseas_names.extend(global_watchlist())
+    if scope in ("hk", "all"):
+        for name in hk_watchlist():
+            if name not in overseas_names:
+                overseas_names.append(name)
+    if overseas_names:
+        g_rows, g_err = _fetch_overseas_daily_eod(overseas_names, as_of=td)
+        daily_rows.extend(g_rows)
+        errors.extend(g_err)
+
+    if not daily_rows:
+        err = "; ".join(errors[:8]) if errors else "no index rows"
+        return {"ok": False, "error": err, "trade_date": td_s, "scope": scope}
 
     try:
-        _upsert_daily_rows(rows, td_s)
-        logger.info("market_index_daily ok date=%s scope=%s count=%s", td_s, scope, len(rows))
-        return {"ok": True, "trade_date": td_s, "count": len(rows), "scope": scope}
+        count = _upsert_daily_batch(daily_rows)
+        logger.info(
+            "market_index_daily ok date=%s scope=%s count=%s warnings=%s",
+            td_s,
+            scope,
+            count,
+            len(errors),
+        )
+        out: dict[str, Any] = {
+            "ok": True,
+            "trade_date": td_s,
+            "count": count,
+            "scope": scope,
+        }
+        if errors:
+            out["warnings"] = errors
+        return out
     except Exception as exc:  # noqa: BLE001
         logger.exception("market_index_daily insert failed")
         return {"ok": False, "error": str(exc), "trade_date": td_s, "scope": scope}
@@ -782,11 +807,126 @@ def _attach_daily_returns(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def _pick_latest_bar_on_or_before(
+    rows: list[dict[str, Any]], as_of: date
+) -> Optional[dict[str, Any]]:
+    as_of_s = as_of.isoformat()
+    candidates = [r for r in rows if str(r.get("trade_date", "")) <= as_of_s]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda r: str(r["trade_date"]))
+
+
+def fetch_global_index_recent_bars(
+    em_name: str,
+    *,
+    min_date: date,
+    page_size: int = 40,
+) -> list[dict[str, Any]]:
+    """Recent daily bars for one global/HK index (EOD sync; not full backfill).
+
+    Prefer Sina/AkShare (stable from cloud hosts); East Money kline is fallback only.
+    """
+    min_s = min_date.isoformat()
+    try:
+        rows = fetch_global_index_daily_history_sina(em_name, min_date=min_date)
+        if rows:
+            return rows
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sina recent bars failed for %s: %s — try EM kline", em_name, exc)
+    try:
+        secid = _global_em_secid(em_name)
+    except (KeyError, ImportError, ValueError):
+        return []
+    try:
+        klines, code, name = _fetch_global_kline_page(
+            secid, end_token="20500000", page_size=page_size, max_attempts=1
+        )
+        if not klines:
+            return []
+        page_rows = _kline_page_to_rows(klines, code=code, disp_name=name or em_name)
+        rows = _attach_daily_returns(page_rows)
+        return [r for r in rows if str(r.get("trade_date", "")) >= min_s]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("EM recent bars failed for %s: %s", em_name, exc)
+        return []
+
+
+def _fetch_overseas_daily_eod(
+    names: list[str],
+    *,
+    as_of: date,
+    lookback_days: int = 12,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    min_date = as_of - timedelta(days=lookback_days)
+    rows: list[dict[str, Any]] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+    for em_name in names:
+        if em_name in seen:
+            continue
+        seen.add(em_name)
+        try:
+            bars = fetch_global_index_recent_bars(em_name, min_date=min_date)
+            bar = _pick_latest_bar_on_or_before(bars, as_of)
+            if bar:
+                rows.append(bar)
+            else:
+                errors.append(f"{em_name}: no bar on/before {as_of.isoformat()}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("overseas EOD fetch failed %s: %s", em_name, exc)
+            errors.append(f"{em_name}: {exc}")
+        delay = fp_settings.market_index_request_delay_sec()
+        if delay > 0:
+            time.sleep(delay)
+    return rows, errors
+
+
+def _cn_spot_to_daily_rows(spot_rows: list[dict[str, Any]], trade_date: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "trade_date": trade_date,
+            "code": r["code"],
+            "name": r.get("name") or "",
+            "open_px": r.get("open_px"),
+            "high_px": r.get("high_px"),
+            "low_px": r.get("low_px"),
+            "close_px": r.get("last_price"),
+            "prev_close": r.get("prev_close"),
+            "change_pct": r.get("change_pct"),
+            "change_amt": r.get("change_amt"),
+            "volume": r.get("volume"),
+            "amount": r.get("amount"),
+        }
+        for r in spot_rows
+    ]
+
+
+def _fetch_cn_daily_eod(as_of: date) -> tuple[list[dict[str, Any]], list[str]]:
+    """Per-index Sina daily K-line (ECS-stable); East Money spot is not used."""
+    td_s = as_of.isoformat()
+    errors: list[str] = []
+    rows: list[dict[str, Any]] = []
+    for code, name in cn_watchlist():
+        try:
+            hist = fetch_cn_index_daily_history(code, name)
+            bar = _pick_latest_bar_on_or_before(hist, as_of)
+            if bar:
+                rows.append(bar)
+            else:
+                errors.append(f"{code}: no bar on/before {td_s}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("CN index EOD fetch failed %s: %s", code, exc)
+            errors.append(f"{code}: {exc}")
+    return rows, errors
+
+
 def _fetch_global_kline_page(
     secid: str,
     *,
     end_token: str,
     page_size: int,
+    max_attempts: int = 5,
 ) -> tuple[list[Any], str, str]:
     import requests
 
@@ -815,7 +955,7 @@ def _fetch_global_kline_page(
         "https://push2his.eastmoney.com/api/qt/stock/kline/get",
     )
     last_exc: Optional[Exception] = None
-    for attempt in range(5):
+    for attempt in range(max(1, max_attempts)):
         for url in urls:
             try:
                 r = requests.get(url, params=params, headers=headers, timeout=30)

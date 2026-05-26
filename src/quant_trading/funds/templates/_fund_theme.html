@@ -20,3 +20,18 @@
 {%- set t = (s or '')|string|trim -%}
 {%- if t and (t[0] in '-−' or t.startswith('−')) -%}down{%- elif t and t not in ('—', '-', '') -%}up{%- endif -%}
 {%- endmacro %}
+
+{% macro pe_table_styles() -%}
+    table.pe-table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+    table.pe-table th,
+    table.pe-table td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    table.pe-table th { font-size: 0.72rem; color: var(--muted); font-weight: 600; white-space: nowrap; }
+    table.pe-table th.num,
+    table.pe-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    table.pe-table td.name { font-weight: 600; }
+    table.pe-table .na { color: var(--muted); }
+{%- endmacro %}
+
+{% macro pe_num(val) -%}
+{%- if val is not none and val != '' -%}{{ '%.2f'|format(val|float) }}{%- else -%}<span class="na">—</span>{%- endif -%}
+{%- endmacro %}

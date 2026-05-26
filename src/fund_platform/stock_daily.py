@@ -1,12 +1,17 @@
-"""Daily A-share snapshot (East Money spot) for constituent lookups."""
+"""Daily A-share snapshot (Sina spot primary; East Money optional enrich)."""
 
 from __future__ import annotations
 
+import json
 import logging
+import math
+import re
 import time
 import traceback
 from datetime import date, datetime, timezone
 from typing import Any, Optional
+
+import requests
 
 from fund_platform import settings as fp_settings
 from fund_platform.db import get_engine
@@ -14,6 +19,30 @@ from fund_platform.db import get_engine
 logger = logging.getLogger(__name__)
 
 _MIN_ROWS_OK = 3000
+
+_SINA_COUNT_URL = (
+    "http://vip.stock.finance.sina.com.cn/quotes_service/api/"
+    "json_v2.php/Market_Center.getHQNodeStockCount?node=hs_a"
+)
+_SINA_SPOT_URL = (
+    "http://vip.stock.finance.sina.com.cn/quotes_service/api/"
+    "json_v2.php/Market_Center.getHQNodeData"
+)
+_SINA_SPOT_PARAMS = {
+    "num": "80",
+    "sort": "symbol",
+    "asc": "1",
+    "node": "hs_a",
+    "symbol": "",
+    "_s_r_a": "page",
+}
+_SINA_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://finance.sina.com.cn/",
+}
 
 
 def _utc_now_iso() -> str:
@@ -67,6 +96,98 @@ def _amount_to_yi(value: Any) -> Optional[float]:
     if v >= 1e6:
         return round(v / 1e8, 2)
     return round(v, 2)
+
+
+def _cap_wan_to_yi(value: Any) -> Optional[float]:
+    """Sina mktcap/nmc fields are in 万元."""
+    v = _opt_float(value)
+    if v is None or v <= 0:
+        return None
+    return round(v / 10000, 2)
+
+
+def _sina_page_count() -> int:
+    last: Optional[Exception] = None
+    for attempt in range(4):
+        try:
+            r = requests.get(_SINA_COUNT_URL, headers=_SINA_HEADERS, timeout=20)
+            r.raise_for_status()
+            nums = re.findall(r"\d+", r.text)
+            if not nums:
+                raise RuntimeError("sina count parse failed")
+            return max(1, math.ceil(int(nums[0]) / 80))
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            time.sleep(fp_settings.stock_daily_retry_sleep_sec() * (attempt + 1))
+    if last:
+        raise last
+    return 1
+
+
+def _fetch_spot_sina_dataframe() -> list[dict[str, Any]]:
+    """Sina paginated A-share spot; includes 流通/总市值 (万元 → 亿)."""
+    page_count = _sina_page_count()
+    page_delay = fp_settings.stock_daily_page_delay_sec()
+    rows: list[dict[str, Any]] = []
+
+    for page in range(1, page_count + 1):
+        if page > 1 and page_delay > 0:
+            time.sleep(page_delay)
+        params = {**_SINA_SPOT_PARAMS, "page": str(page)}
+        last: Optional[Exception] = None
+        data: list[dict[str, Any]] = []
+        for attempt in range(4):
+            try:
+                r = requests.get(
+                    _SINA_SPOT_URL, params=params, headers=_SINA_HEADERS, timeout=30
+                )
+                r.raise_for_status()
+                text = r.text.strip()
+                if not text or text[0] not in "[{":
+                    raise RuntimeError(f"sina spot non-json page={page}: {text[:80]!r}")
+                payload = json.loads(text)
+                if not isinstance(payload, list):
+                    raise RuntimeError(f"sina spot unexpected page={page}")
+                data = payload
+                break
+            except Exception as exc:  # noqa: BLE001
+                last = exc
+                time.sleep(fp_settings.stock_daily_retry_sleep_sec() * (attempt + 1))
+        if not data and last:
+            if len(rows) >= _MIN_ROWS_OK:
+                logger.warning("sina spot partial ok rows=%s page=%s: %s", len(rows), page, last)
+                break
+            raise last
+
+        for rec in data:
+            code = str(rec.get("code", "")).strip()
+            if not code.isdigit():
+                continue
+            code = code.zfill(6)
+            rows.append(
+                {
+                    "code": code,
+                    "name": str(rec.get("name", "")).strip(),
+                    "price": _opt_float(rec.get("trade")),
+                    "change_pct": _opt_float(rec.get("changepercent")),
+                    "float_market_cap": _cap_wan_to_yi(rec.get("nmc")),
+                    "total_market_cap": _cap_wan_to_yi(rec.get("mktcap")),
+                    "turnover_pct": _opt_float(rec.get("turnoverratio")),
+                    "amount": _amount_to_yi(rec.get("amount")),
+                    "pe_dynamic": _opt_float(rec.get("per")),
+                    "pb": _opt_float(rec.get("pb")),
+                    "volume_ratio": None,
+                    "amplitude_pct": None,
+                    "change_5m_pct": None,
+                    "speed_pct": None,
+                    "change_60d_pct": None,
+                    "change_ytd_pct": None,
+                }
+            )
+
+    if len(rows) < _MIN_ROWS_OK:
+        raise RuntimeError(f"sina spot rows too few: {len(rows)}")
+    return rows
 
 
 def _fetch_spot_em_dataframe() -> "pd.DataFrame":
@@ -204,6 +325,78 @@ def _fetch_spot_em_dataframe() -> "pd.DataFrame":
     return df[present]
 
 
+def fetch_a_share_spot_sina(*, max_attempts: int = 3) -> list[dict[str, Any]]:
+    """Sina paginated spot (ECS-friendly; includes float/total market cap)."""
+    last_exc: Optional[Exception] = None
+    for attempt in range(max(1, max_attempts)):
+        try:
+            return _fetch_spot_sina_dataframe()
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.warning("sina spot attempt %s failed: %s", attempt + 1, exc)
+            time.sleep(fp_settings.stock_daily_retry_sleep_sec() * (attempt + 1))
+    if last_exc:
+        raise last_exc
+    return []
+
+
+_CAP_ENRICH_KEYS = (
+    "float_market_cap",
+    "total_market_cap",
+    "turnover_pct",
+    "pe_dynamic",
+    "pb",
+    "volume_ratio",
+    "amplitude_pct",
+    "change_5m_pct",
+    "speed_pct",
+    "change_60d_pct",
+    "change_ytd_pct",
+)
+
+
+def _merge_em_cap_fields(base: list[dict[str, Any]], em_rows: list[dict[str, Any]]) -> int:
+    by_code = {r["code"]: r for r in em_rows}
+    merged = 0
+    for row in base:
+        em = by_code.get(row["code"])
+        if not em:
+            continue
+        touched = False
+        for key in _CAP_ENRICH_KEYS:
+            val = em.get(key)
+            if val is not None:
+                row[key] = val
+                touched = True
+        if touched:
+            merged += 1
+    return merged
+
+
+def fetch_a_share_spot(*, max_attempts: int = 6) -> tuple[list[dict[str, Any]], str]:
+    """Primary Sina spot; best-effort East Money enrich; EM-only fallback."""
+    try:
+        rows = fetch_a_share_spot_sina(max_attempts=max_attempts)
+    except Exception as sina_exc:  # noqa: BLE001
+        logger.warning("sina spot failed, trying eastmoney: %s", sina_exc)
+        rows = fetch_a_share_spot_em(max_attempts=2)
+        if len(rows) < _MIN_ROWS_OK:
+            raise RuntimeError(f"stock spot rows too few: {len(rows)}") from sina_exc
+        return rows, "eastmoney"
+
+    source = "sina"
+    try:
+        em_rows = fetch_a_share_spot_em(max_attempts=1)
+        if em_rows:
+            n = _merge_em_cap_fields(rows, em_rows)
+            if n > 0:
+                source = "sina+em_caps"
+            logger.info("stock spot em cap enrich merged=%s", n)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("stock spot em cap enrich skipped: %s", exc)
+    return rows, source
+
+
 def fetch_a_share_spot_em(*, max_attempts: int = 3) -> list[dict[str, Any]]:
     df = None
     last_exc: Optional[Exception] = None
@@ -277,7 +470,7 @@ def sync_stock_daily(trade_date: Optional[date] = None) -> dict[str, Any]:
         )
         job_id = cur.lastrowid
 
-        payload = fetch_a_share_spot_em()
+        payload, source = fetch_a_share_spot()
         if len(payload) < _MIN_ROWS_OK:
             raise RuntimeError(f"stock spot rows too few: {len(payload)}")
 
@@ -328,8 +521,14 @@ def sync_stock_daily(trade_date: Optional[date] = None) -> dict[str, Any]:
             (_utc_now_iso(), len(payload), job_id),
         )
         raw.commit()
-        logger.info("stock_daily sync OK %s rows=%s", td_s, len(payload))
-        return {"ok": True, "trade_date": td_s, "count": len(payload), "job_id": job_id}
+        logger.info("stock_daily sync OK %s rows=%s source=%s", td_s, len(payload), source)
+        return {
+            "ok": True,
+            "trade_date": td_s,
+            "count": len(payload),
+            "job_id": job_id,
+            "source": source,
+        }
     except Exception as exc:  # noqa: BLE001
         err = f"{exc}\n{traceback.format_exc()}"
         logger.exception("sync_stock_daily failed")

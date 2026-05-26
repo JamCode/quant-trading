@@ -59,7 +59,7 @@ def sector_flow_cron_minute() -> int:
 
 
 def sector_flow_period_delay_sec() -> float:
-    """Pause between AkShare industry fund-flow period fetches."""
+    """Pause between industry fund-flow period fetches."""
     return max(0.0, float(os.environ.get("SECTOR_FLOW_PERIOD_DELAY_SEC", "3")))
 
 
@@ -242,3 +242,48 @@ def market_index_hk_daily_cron_minute() -> int:
 def market_index_backfill_days() -> int:
     """Days of daily history to backfill; 0 = full available history."""
     return max(0, int(os.environ.get("MARKET_INDEX_BACKFILL_DAYS", "730")))
+
+
+def index_valuation_cn_symbols() -> list[str]:
+    """Legulegu index names, e.g. 沪深300,中证500."""
+    raw = os.environ.get(
+        "INDEX_VALUATION_CN_SYMBOLS",
+        "沪深300,中证500,中证800,中证1000,上证50,创业板50",
+    )
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def index_valuation_request_delay_sec() -> float:
+    return max(0.0, float(os.environ.get("INDEX_VALUATION_REQUEST_DELAY_SEC", "2")))
+
+
+def index_valuation_cron_hour() -> int:
+    return int(os.environ.get("INDEX_VALUATION_CRON_HOUR", "17"))
+
+
+def index_valuation_cron_minute() -> int:
+    return int(os.environ.get("INDEX_VALUATION_CRON_MINUTE", "45"))
+
+
+def index_valuation_shiller_url() -> str:
+    return os.environ.get(
+        "INDEX_VALUATION_SHILLER_URL",
+        "http://www.econ.yale.edu/~shiller/data/ie_data.xls",
+    ).strip()
+
+
+def index_valuation_cn_lookback_days() -> int:
+    """Days of CN Legulegu history to upsert per run (full series is large)."""
+    return max(30, int(os.environ.get("INDEX_VALUATION_CN_LOOKBACK_DAYS", "60")))
+
+
+def industry_pe_cninfo_request_delay_sec() -> float:
+    return max(0.0, float(os.environ.get("INDUSTRY_PE_CNINFO_REQUEST_DELAY_SEC", "0.35")))
+
+
+def industry_pe_cron_hour() -> int:
+    return int(os.environ.get("INDUSTRY_PE_CRON_HOUR", "18"))
+
+
+def industry_pe_cron_minute() -> int:
+    return int(os.environ.get("INDUSTRY_PE_CRON_MINUTE", "20"))

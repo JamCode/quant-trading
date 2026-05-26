@@ -1,0 +1,484 @@
+{% from '_fund_theme.html' import palette_root, palette_light, pe_table_styles, pe_num %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>市场估值 · PE</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --panel: #1a2230;
+      --text: #e7ecf3;
+      --muted: #9aa7b5;
+      --accent: #4da3ff;
+      --border: #2a3545;
+{{ palette_root() }}
+      --row-alt: rgba(255, 255, 255, 0.03);
+      --active: rgba(77, 163, 255, 0.15);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1b2430;
+        --muted: #5c6b7a;
+        --accent: #0b69ff;
+        --border: #e1e6ed;
+{{ palette_light() }}
+        --row-alt: rgba(0, 0, 0, 0.02);
+        --active: rgba(11, 105, 255, 0.1);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header, main { max-width: 1100px; margin: 0 auto; }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    main { padding: 1rem 1.5rem 2rem; }
+    a { color: var(--accent); text-decoration: none; }
+    h1 { margin: 0.35rem 0; font-size: 1.35rem; }
+    .sub { margin: 0; font-size: 0.875rem; color: var(--muted); }
+    .nav-links { font-size: 0.875rem; margin-bottom: 0.5rem; }
+    .nav-links a { margin-right: 1rem; }
+    .region-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0 0.75rem; }
+    .region-tabs a {
+      padding: 0.35rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      color: var(--text);
+    }
+    .region-tabs a.active {
+      background: var(--active);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    section {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    h2 { margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--muted); }
+    table.data { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+{{ pe_table_styles() }}
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: var(--row-alt); }
+    tr.active-row { background: var(--active); }
+    .meta { font-size: 0.82rem; color: var(--muted); margin: 0.5rem 0 0; }
+    .empty { padding: 1.5rem; text-align: center; color: var(--muted); }
+    .chart-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .chart-toolbar button {
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 0.3rem 0.65rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .chart-toolbar button.active {
+      background: var(--active);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    .chart-wrap { position: relative; height: 320px; }
+    .legend { font-size: 0.78rem; color: var(--muted); margin-top: 0.35rem; }
+  </style>
+</head>
+<body>
+  {% set bp = (url_prefix ~ '/') if url_prefix else '/' %}
+  <header>
+    <div class="nav-links">
+      <a href="{{ bp }}">行业仪表盘</a>
+      <a href="{{ bp }}funds">基金全目录</a>
+      <a href="{{ bp }}sectors">行业资金流向</a>
+      <a href="{{ bp }}crawler">爬虫任务</a>
+    </div>
+    <h1>市场估值 · PE</h1>
+    <p class="sub">宽基指数（乐咕 / yfinance / Shiller）· 行业平均 PE（巨潮国证静态口径）</p>
+  </header>
+  <main>
+    <div class="region-tabs">
+      <a href="{{ bp }}valuation?tab=index" class="{% if active_tab == 'index' %}active{% endif %}">宽基指数</a>
+      <a href="{{ bp }}valuation?tab=industry&industry_level={{ industry_level|default(2) }}" class="{% if active_tab == 'industry' %}active{% endif %}">行业 PE</a>
+    </div>
+
+    {% if active_tab == 'index' %}
+    {% if not has_index_data %}
+    <section class="empty">
+      <p>暂无宽基估值数据。请运行 <code>index_valuation_daily_sync</code>（默认周一至周六 17:45）。</p>
+      <p><a href="{{ bp }}crawler">查看爬虫任务 →</a></p>
+    </section>
+    {% else %}
+    <div class="region-tabs">
+      {% for reg, label in [('cn', 'A股'), ('hk', '港股'), ('us', '美股')] %}
+      <a href="{{ bp }}valuation?tab=index&region={{ reg }}" class="{% if reg == selected_region %}active{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+
+    <section>
+      <h2>{{ {'cn':'A股','hk':'港股','us':'美股'}[selected_region] }} · 最新 PE</h2>
+      <table class="pe-table">
+        <colgroup>
+          <col class="col-name" style="width:26%" />
+          {% if selected_region == 'cn' %}
+          <col style="width:14%" /><col style="width:14%" />
+          {% elif selected_region == 'us' %}
+          <col style="width:14%" /><col style="width:14%" />
+          {% else %}
+          <col style="width:16%" />
+          {% endif %}
+          <col style="width:14%" /><col style="width:18%" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>指数</th>
+            {% if selected_region == 'cn' %}
+            <th class="num">滚动 PE</th>
+            <th class="num">静态 PE</th>
+            {% elif selected_region == 'us' %}
+            <th class="num">PE(TTM)</th>
+            <th class="num">CAPE</th>
+            {% else %}
+            <th class="num">PE(TTM)</th>
+            {% endif %}
+            <th>数据日</th>
+            <th>来源</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in latest_by_region[selected_region] %}
+          {% set active = row.index_code == selected_code %}
+          <tr class="clickable{% if active %} active-row{% endif %}"
+              onclick="location.href='{{ bp }}valuation?tab=index&region={{ selected_region|uq }}&index_code={{ row.index_code|uq }}&history_days={{ history_days }}'">
+            <td class="name">{{ row.index_name }}</td>
+            {% if selected_region == 'cn' %}
+            <td class="num">{{ pe_num(row.pe_ttm) }}</td>
+            <td class="num">{{ pe_num(row.pe_static) }}</td>
+            {% elif selected_region == 'us' %}
+            <td class="num">{{ pe_num(row.pe_ttm) }}</td>
+            <td class="num">{{ pe_num(row.pe_cape) }}</td>
+            {% else %}
+            <td class="num">{{ pe_num(row.pe_ttm) }}</td>
+            {% endif %}
+            <td>{{ row.trade_date }}</td>
+            <td>{{ row.source }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="{% if selected_region == 'cn' or selected_region == 'us' %}5{% else %}4{% endif %}" class="empty">该区域暂无数据</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>
+        {% if selected_meta %}{{ selected_meta.index_name }}{% else %}{{ selected_code }}{% endif %}
+        · 历史 PE
+      </h2>
+      {% if selected_meta %}
+      <p class="meta">
+        数据日 {{ selected_meta.trade_date or '—' }}
+        {% if selected_region == 'cn' %}
+        · 滚动 {{ pe_num(selected_meta.pe_ttm) }} · 静态 {{ pe_num(selected_meta.pe_static) }}
+        {% elif selected_region == 'us' %}
+        · TTM {{ pe_num(selected_meta.pe_ttm) }}{% if selected_meta.pe_cape is not none %} · CAPE {{ pe_num(selected_meta.pe_cape) }}{% endif %}
+        {% else %}
+        · TTM {{ pe_num(selected_meta.pe_ttm) }}
+        {% endif %}
+      </p>
+      {% endif %}
+      {% if chart_json != "[]" %}
+      <div class="chart-toolbar" id="peChartToolbar" role="group" aria-label="历史区间">
+        <button type="button" data-days="365">近 1 年</button>
+        <button type="button" data-days="1095">近 3 年</button>
+        <button type="button" data-days="1825">近 5 年</button>
+        <button type="button" data-days="0" class="active">全部</button>
+      </div>
+      <div class="chart-wrap"><canvas id="peChart" aria-label="历史 PE 折线图"></canvas></div>
+      <p class="legend">蓝：PE(TTM) · 橙：静态 PE（A股）· 紫：Shiller CAPE（标普500）</p>
+      {% else %}
+      <p class="empty">该指数暂无历史序列，请确认爬虫任务已同步。</p>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% else %}
+    {% if not has_industry_data %}
+    <section class="empty">
+      <p>暂无行业 PE 数据。请先执行一次性回填：</p>
+      <p><code>python examples/backfill_industry_pe_cninfo.py --start 2023-01-01</code></p>
+      <p>日常更新任务：<code>industry_pe_cninfo_daily_sync</code>（默认周一至周五 18:20）。</p>
+      <p><a href="{{ bp }}crawler">查看爬虫任务 →</a></p>
+    </section>
+    {% else %}
+    <div class="region-tabs">
+      {% for lvl, label in [(1, '一级'), (2, '二级'), (3, '三级'), (4, '四级')] %}
+      <a href="{{ bp }}valuation?tab=industry&industry_level={{ lvl }}" class="{% if industry_level == lvl %}active{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    {% if industry_pe_date %}
+    <p class="meta">库内最新交易日 {{ industry_pe_date }} · 来源巨潮国证 · 静态 PE</p>
+    {% endif %}
+
+    <section>
+      <h2>国证行业 · 最新静态 PE</h2>
+      <table class="pe-table">
+        <colgroup>
+          <col style="width:32%" />
+          <col style="width:17%" />
+          <col style="width:17%" />
+          <col style="width:17%" />
+          <col style="width:17%" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>行业</th>
+            <th class="num">加权 PE</th>
+            <th class="num">中位数</th>
+            <th class="num">算术平均</th>
+            <th>数据日</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in industry_latest %}
+          {% set active = row.industry_code == selected_industry_code %}
+          <tr class="clickable{% if active %} active-row{% endif %}"
+              onclick="location.href='{{ bp }}valuation?tab=industry&industry_level={{ industry_level }}&industry_code={{ row.industry_code|uq }}&history_days={{ history_days }}'">
+            <td class="name">{{ row.industry_name }}<span class="meta"> L{{ row.industry_level }}</span></td>
+            <td class="num">{{ pe_num(row.pe_weighted) }}</td>
+            <td class="num">{{ pe_num(row.pe_median) }}</td>
+            <td class="num">{{ pe_num(row.pe_avg) }}</td>
+            <td>{{ row.trade_date }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>
+        {% if selected_industry_meta %}{{ selected_industry_meta.industry_name }}{% else %}{{ selected_industry_code }}{% endif %}
+        · 历史 PE
+      </h2>
+      {% if selected_industry_meta %}
+      <p class="meta">
+        数据日 {{ selected_industry_meta.trade_date or '—' }}
+        · 加权 {{ pe_num(selected_industry_meta.pe_weighted) }}
+        · 中位 {{ pe_num(selected_industry_meta.pe_median) }}
+        · 算术 {{ pe_num(selected_industry_meta.pe_avg) }}
+      </p>
+      {% endif %}
+      {% if industry_chart_json != "[]" %}
+      <div class="chart-toolbar" id="indPeChartToolbar" role="group" aria-label="历史区间">
+        <button type="button" data-days="365">近 1 年</button>
+        <button type="button" data-days="1095">近 3 年</button>
+        <button type="button" data-days="0" class="active">全部</button>
+      </div>
+      <div class="chart-wrap"><canvas id="indPeChart" aria-label="行业历史 PE"></canvas></div>
+      <p class="legend">蓝：加权平均 · 橙：中位数 · 绿：算术平均</p>
+      {% else %}
+      <p class="empty">该行业暂无历史序列。</p>
+      {% endif %}
+    </section>
+    {% endif %}
+    {% endif %}
+  </main>
+
+  {% if active_tab == 'index' and chart_json != "[]" %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      const ALL = {{ chart_json | safe }};
+      const canvas = document.getElementById('peChart');
+      const toolbar = document.getElementById('peChartToolbar');
+      if (!canvas || !ALL.length) return;
+
+      const colors = getComputedStyle(document.documentElement);
+      const accent = colors.getPropertyValue('--accent').trim() || '#4da3ff';
+      const muted = colors.getPropertyValue('--muted').trim() || '#9aa7b5';
+      const text = colors.getPropertyValue('--text').trim() || '#e7ecf3';
+      const border = colors.getPropertyValue('--border').trim() || '#2a3545';
+
+      function sliceByDays(days) {
+        if (!days || days <= 0) return ALL;
+        const cutoff = ALL[ALL.length - 1].d;
+        const end = new Date(cutoff + 'T00:00:00');
+        const start = new Date(end);
+        start.setDate(start.getDate() - days);
+        const iso = start.toISOString().slice(0, 10);
+        return ALL.filter((p) => p.d >= iso);
+      }
+
+      function hasField(points, key) {
+        return points.some((p) => p[key] != null);
+      }
+
+      let chart;
+      function render(days) {
+        const pts = sliceByDays(days);
+        const datasets = [];
+        const labels = pts.map((p) => p.d);
+        if (hasField(pts, 'ttm')) {
+          datasets.push({
+            label: 'PE(TTM)',
+            data: pts.map((p) => p.ttm),
+            borderColor: accent,
+            backgroundColor: accent + '33',
+            tension: 0.15,
+            pointRadius: 0,
+            borderWidth: 2,
+          });
+        }
+        if (hasField(pts, 'static')) {
+          datasets.push({
+            label: '静态 PE',
+            data: pts.map((p) => p.static),
+            borderColor: '#e3a008',
+            tension: 0.15,
+            pointRadius: 0,
+            borderWidth: 1.5,
+          });
+        }
+        if (hasField(pts, 'cape')) {
+          datasets.push({
+            label: 'Shiller CAPE',
+            data: pts.map((p) => p.cape),
+            borderColor: '#a371f7',
+            tension: 0.15,
+            pointRadius: 0,
+            borderWidth: 1.5,
+          });
+        }
+        if (chart) chart.destroy();
+        chart = new Chart(canvas, {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { labels: { color: text } },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2) ?? '—'}`,
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: { color: muted, maxTicksLimit: 10 },
+                grid: { color: border },
+              },
+              y: {
+                ticks: { color: muted },
+                grid: { color: border },
+              },
+            },
+          },
+        });
+      }
+
+      toolbar?.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          toolbar.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          const days = parseInt(btn.dataset.days || '0', 10);
+          if (days > 0) {
+            const url = new URL(location.href);
+            url.searchParams.set('history_days', String(days));
+            history.replaceState(null, '', url);
+          }
+          render(days);
+        });
+      });
+
+      render(0);
+    })();
+  </script>
+  {% endif %}
+
+  {% if active_tab == 'industry' and industry_chart_json != "[]" %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      const ALL = {{ industry_chart_json | safe }};
+      const canvas = document.getElementById('indPeChart');
+      const toolbar = document.getElementById('indPeChartToolbar');
+      if (!canvas || !ALL.length) return;
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4da3ff';
+      const muted = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#9aa7b5';
+      const text = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#e7ecf3';
+      const border = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#2a3545';
+      function sliceByDays(days) {
+        if (!days) return ALL;
+        const end = new Date(ALL[ALL.length - 1].d + 'T00:00:00');
+        const start = new Date(end);
+        start.setDate(start.getDate() - days);
+        const iso = start.toISOString().slice(0, 10);
+        return ALL.filter((p) => p.d >= iso);
+      }
+      function hasField(pts, k) { return pts.some((p) => p[k] != null); }
+      let chart;
+      function render(days) {
+        const pts = sliceByDays(days);
+        const labels = pts.map((p) => p.d);
+        const datasets = [];
+        if (hasField(pts, 'weighted')) {
+          datasets.push({ label: '加权 PE', data: pts.map((p) => p.weighted), borderColor: accent, pointRadius: 0, borderWidth: 2, tension: 0.15 });
+        }
+        if (hasField(pts, 'median')) {
+          datasets.push({ label: '中位数', data: pts.map((p) => p.median), borderColor: '#e3a008', pointRadius: 0, borderWidth: 1.5, tension: 0.15 });
+        }
+        if (hasField(pts, 'avg')) {
+          datasets.push({ label: '算术平均', data: pts.map((p) => p.avg), borderColor: '#3fb950', pointRadius: 0, borderWidth: 1.5, tension: 0.15 });
+        }
+        if (chart) chart.destroy();
+        chart = new Chart(canvas, {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: text } } },
+            scales: {
+              x: { ticks: { color: muted, maxTicksLimit: 10 }, grid: { color: border } },
+              y: { ticks: { color: muted }, grid: { color: border } },
+            },
+          },
+        });
+      }
+      toolbar?.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          toolbar.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          render(parseInt(btn.dataset.days || '0', 10) || 0);
+        });
+      });
+      render(0);
+    })();
+  </script>
+  {% endif %}
+</body>
+</html>

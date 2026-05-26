@@ -51,7 +51,9 @@ def _schedule_summary(task_key: str) -> str:
     h = fp_settings.crawler_cron_hour()
     m = fp_settings.crawler_cron_minute()
     if task_key == "fund_mysql_daily_sync":
-        return f"每天 {h:02d}:{m:02d}（本地时区）"
+        return (
+            f"每天 {h:02d}:{m:02d}（北京时间）"
+        )
     if task_key == "stock_daily_sync":
         return (
             f"每天 {fp_settings.stock_daily_cron_hour():02d}:"
@@ -84,6 +86,16 @@ def _schedule_summary(task_key: str) -> str:
         return (
             f"周一至周六 {fp_settings.market_index_global_daily_cron_hour():02d}:"
             f"{fp_settings.market_index_global_daily_cron_minute():02d}"
+        )
+    if task_key == "index_valuation_daily_sync":
+        return (
+            f"周一至周六 {fp_settings.index_valuation_cron_hour():02d}:"
+            f"{fp_settings.index_valuation_cron_minute():02d}"
+        )
+    if task_key == "industry_pe_cninfo_daily_sync":
+        return (
+            f"周一至周五 {fp_settings.industry_pe_cron_hour():02d}:"
+            f"{fp_settings.industry_pe_cron_minute():02d}"
         )
     return ""
 
@@ -134,6 +146,8 @@ def _all_task_keys() -> tuple[str, ...]:
         "market_index_daily_cn",
         "market_index_daily_hk",
         "market_index_daily_global",
+        "index_valuation_daily_sync",
+        "industry_pe_cninfo_daily_sync",
     )
 
 
@@ -152,6 +166,22 @@ def begin_run(task_key: str) -> int:
         run_id = int(cur.lastrowid)
         raw.commit()
         return run_id
+    except Exception:
+        raw.rollback()
+        raise
+    finally:
+        cur.close()
+        raw.close()
+
+
+def abort_run(run_id: int) -> None:
+    """Drop a run row (e.g. intentional skip with nothing to audit)."""
+    engine = get_engine()
+    raw = engine.raw_connection()
+    cur = raw.cursor()
+    try:
+        cur.execute("DELETE FROM crawler_job_runs WHERE id = %s", (run_id,))
+        raw.commit()
     except Exception:
         raw.rollback()
         raise
@@ -197,7 +227,7 @@ def map_result_to_detail(task_key: str, result: dict[str, Any]) -> dict[str, Any
         detail["row_count"] = result["total_rows"]
     elif result.get("count") is not None:
         detail["row_count"] = result["count"]
-    for key in ("trade_date", "quote_time", "target", "ok_funds", "failed"):
+    for key in ("trade_date", "quote_time", "target", "ok_funds", "failed", "source", "scope"):
         if result.get(key) is not None:
             detail[key] = result[key]
 
@@ -227,6 +257,9 @@ def map_result_to_detail(task_key: str, result: dict[str, Any]) -> dict[str, Any
 
     if result.get("skipped") and result.get("reason"):
         detail["skipped_reason"] = str(result["reason"])[:500]
+
+    if result.get("source") is not None and "source" not in detail:
+        detail["source"] = str(result["source"])
 
     return {k: v for k, v in detail.items() if _is_json_scalar(v)}
 
@@ -258,11 +291,13 @@ def run_scheduled_job(task_key: str, fn: Callable[[], dict[str, Any]]) -> None:
     try:
         result = fn()
         status, error, detail = resolve_run_outcome(task_key, result)
+        if status == _STATUS_SKIPPED:
+            abort_run(run_id)
+            logger.info("job skipped id=%s (not recorded)", task_key)
+            return
         finish_run(run_id, status=status, error=error, detail=detail)
         if status == _STATUS_SUCCESS:
             logger.info("job end id=%s run_id=%s status=success", task_key, run_id)
-        elif status == _STATUS_SKIPPED:
-            logger.info("job end id=%s run_id=%s status=skipped", task_key, run_id)
         else:
             logger.error("job end id=%s run_id=%s status=%s err=%s", task_key, run_id, status, error)
     except Exception:

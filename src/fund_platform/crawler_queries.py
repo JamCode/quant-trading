@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 import pymysql.cursors
+
+_CN_TZ = ZoneInfo("Asia/Shanghai")
+_UTC = timezone.utc
 
 _STATUS_LABELS = {
     "running": "运行中",
@@ -22,10 +26,19 @@ def _cursor(conn):
 
 def _jsonable(val: Any) -> Any:
     if isinstance(val, datetime):
-        return val.strftime("%Y-%m-%d %H:%M:%S")
+        return _format_cn_time(val)
     if isinstance(val, date):
         return val.isoformat()
     return val
+
+
+def _format_cn_time(dt: datetime) -> str:
+    """DB stores UTC naive timestamps; display as Asia/Shanghai."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_UTC)
+    else:
+        dt = dt.astimezone(_UTC)
+    return dt.astimezone(_CN_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -64,6 +77,8 @@ def format_run_summary(
         parts.append(str(detail["trade_date"]))
     if detail.get("ok_funds") is not None:
         parts.append(f"成功 {detail['ok_funds']} 只")
+    if detail.get("source"):
+        parts.append(str(detail["source"]))
     if detail.get("skipped_reason"):
         parts.append(str(detail["skipped_reason"])[:80])
     return " · ".join(parts)
