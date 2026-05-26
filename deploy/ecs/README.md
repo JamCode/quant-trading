@@ -18,7 +18,10 @@ export ECS_HOST=47.110.78.65
 export ECS_USER=wanghan
 export ECS_KEY="$HOME/Documents/quant-trading/my-ecs-key2.pem"   # 按实际路径修改
 chmod 600 "$ECS_KEY"
+export ECS_PORT=2222   # sshd 已监听 2222；须在阿里云安全组放行 TCP 2222
 ```
+
+本机 SSH 别名：`ecs47-wanghan`（2222）、过渡用 `ecs47-wanghan-22`（22）。安全组未放行 2222 前：`ssh ecs47-wanghan-22`。
 
 ## MySQL（推荐：沿用 ECS 本机已有 MySQL）
 
@@ -48,7 +51,21 @@ cp deploy/ecs/fund-stack.env.example deploy/ecs/fund-stack.env
 DATABASE_URL=mysql+pymysql://fund_app:你的密码@127.0.0.1:3306/fund_svc
 ```
 
-## 一键部署（推荐）
+## GitHub Actions 自动部署（推荐：本机 WiFi 封 SSH 时）
+
+`push` 到 **`main`** 且变更 `src/`、`deploy/ecs/`、`pyproject.toml`、`schema/mysql/` 时，运行 [`.github/workflows/ecs-quant-deploy.yml`](../../.github/workflows/ecs-quant-deploy.yml)。
+
+**一次性配置**（仓库 **Settings → Secrets and variables → Actions**）：
+
+| 类型 | 名称 | 说明 |
+|------|------|------|
+| Secret | `ECS_SSH_PRIVATE_KEY` | `my-ecs-key2.pem` **全文**（与吉他仓库可复用同一把钥） |
+| Variable | `ECS_HOST` | 可选，默认 `47.110.78.65` |
+| Variable | `ECS_PORT` | 可选，默认 `2222` |
+
+本机只需 `git push`；Runner 经 SSH 执行 `deploy/ecs/github-actions-deploy.sh`（等同 `push-and-setup` + 重启 systemd）。也可在 Actions 页 **Run workflow** 手动触发。
+
+## 一键部署（本机 SSH 可达时）
 
 ```bash
 ECS_KEY="$HOME/Documents/quant-trading/my-ecs-key2.pem" ./deploy/ecs/deploy-remote.sh
@@ -112,7 +129,7 @@ python -c "from fund_platform.fund_holdings_sync import run_fund_industry_pipeli
 ```
 
 验证：`SELECT industry, COUNT(*) FROM fund_industry_exposure WHERE weight_pct>=10 GROUP BY industry LIMIT 5;`  
-打开 `https://你的域名/quant-funds/`（或 `curl -sS http://127.0.0.1:8010/`）查看半导体等相关基金是否非空。
+打开 `https://你的域名/quant-funds/`（或 `curl -sS http://127.0.0.1:8010/`）为**单页应用**入口（左侧导航 + 行业/基金抽屉）。旧书签 `/quant-funds/sectors/某行业`、`/quant-funds/funds/代码` 会自动重定向并打开抽屉。
 
 **基金 AI 助手**（提示词生成 + 粘贴解析）：`https://你的域名/quant-funds/advisor`（本机调试：`http://127.0.0.1:8010/advisor`）。
 

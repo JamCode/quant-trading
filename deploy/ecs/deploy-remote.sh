@@ -6,15 +6,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ECS_USER="${ECS_USER:-wanghan}"
 ECS_HOST="${ECS_HOST:-47.110.78.65}"
+ECS_PORT="${ECS_PORT:-2222}"
 ECS="${ECS_USER}@${ECS_HOST}"
 ROOT="root@${ECS_HOST}"
+export ECS_PORT
 
 if [[ -z "${ECS_KEY:-}" ]]; then
   echo "请设置 ECS_KEY" >&2
   exit 1
 fi
 chmod 600 "$ECS_KEY"
-SSH=(ssh -i "$ECS_KEY" -o StrictHostKeyChecking=accept-new)
+SSH=(ssh -i "$ECS_KEY" -p "$ECS_PORT" -o StrictHostKeyChecking=accept-new)
 
 "${SCRIPT_DIR}/push-and-setup.sh"
 

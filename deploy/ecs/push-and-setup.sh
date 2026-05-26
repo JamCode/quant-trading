@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 在本机执行：rsync quant-trading → ECS，创建 venv 并 pip install。
 #   ECS_KEY="$HOME/Documents/quant-trading/my-ecs-key2.pem" ./deploy/ecs/push-and-setup.sh
-# 可选：ECS_USER（默认 wanghan）、ECS_HOST（默认 47.110.78.65）
+# 可选：ECS_USER（默认 wanghan）、ECS_HOST（默认 47.110.78.65）、ECS_PORT（默认 2222）
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,6 +9,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ECS_USER="${ECS_USER:-wanghan}"
 ECS_HOST="${ECS_HOST:-47.110.78.65}"
+ECS_PORT="${ECS_PORT:-2222}"
 ECS="${ECS_USER}@${ECS_HOST}"
 
 if [[ -z "${ECS_KEY:-}" ]]; then
@@ -18,8 +19,8 @@ if [[ -z "${ECS_KEY:-}" ]]; then
 fi
 chmod 600 "$ECS_KEY"
 
-SSH=(ssh -i "$ECS_KEY" -o StrictHostKeyChecking=accept-new)
-RSYNC=(rsync -avz -e "ssh -i $ECS_KEY -o StrictHostKeyChecking=accept-new")
+SSH=(ssh -i "$ECS_KEY" -p "$ECS_PORT" -o StrictHostKeyChecking=accept-new)
+RSYNC=(rsync -avz -e "ssh -i $ECS_KEY -p $ECS_PORT -o StrictHostKeyChecking=accept-new")
 
 echo "==> rsync repo -> ${ECS}:~/quant-trading/"
 "${SSH[@]}" "$ECS" "mkdir -p ~/quant-trading"

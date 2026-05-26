@@ -1,0 +1,96 @@
+# push 到 main（相关路径变更）或手动 workflow_dispatch：部署 quant-trading 到阿里云 ECS。
+#
+# 在 GitHub 仓库 Settings → Secrets and variables → Actions 配置：
+#
+# Secrets（必填）
+#   ECS_SSH_PRIVATE_KEY   ECS 登录私钥全文（与 my-ecs-key2.pem 一致，勿提交仓库）
+#
+# Variables（选填，Repository variables）
+#   ECS_HOST              默认 47.110.78.65
+#   ECS_USER              默认 wanghan
+#   ECS_PORT              默认 2222
+#
+# 前置条件（一次性，见 deploy/ecs/README.md）：
+#   - ECS 上已有 conda 环境 quant、fund-stack.env、MySQL fund_svc
+#   - 安全组已放行 ECS_PORT（默认 2222）
+#   - 对应公钥已写入 ECS wanghan（及 root，若需）
+
+name: ECS quant-trading deploy
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'deploy/ecs/**'
+      - 'pyproject.toml'
+      - 'schema/mysql/**'
+      - '.github/workflows/ecs-quant-deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ecs-quant-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    env:
+      ECS_HOST: ${{ vars.ECS_HOST }}
+      ECS_USER: ${{ vars.ECS_USER }}
+      ECS_PORT: ${{ vars.ECS_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve ECS defaults
+        run: |
+          echo "ECS_HOST=${ECS_HOST:-47.110.78.65}" >> "$GITHUB_ENV"
+          echo "ECS_USER=${ECS_USER:-wanghan}" >> "$GITHUB_ENV"
+          echo "ECS_PORT=${ECS_PORT:-2222}" >> "$GITHUB_ENV"
+
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.ECS_SSH_PRIVATE_KEY }}" ]; then
+            echo "::error::Missing secret ECS_SSH_PRIVATE_KEY"
+            exit 1
+          fi
+
+      - name: Install SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ECS_SSH_PRIVATE_KEY }}" > ~/.ssh/ecs_deploy_key
+          chmod 600 ~/.ssh/ecs_deploy_key
+          ssh-keyscan -p "$ECS_PORT" -H "$ECS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy (rsync + pip + restart)
+        env:
+          ECS_KEY: ~/.ssh/ecs_deploy_key
+        run: ./deploy/ecs/github-actions-deploy.sh
+
+      - name: Public health check
+        run: |
+          set +e
+          for i in 1 2 3 4 5; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 \
+              "https://wanghanai.xyz/quant-funds/health" 2>/dev/null || true)
+            echo "public health try $i: HTTP ${code:-empty}"
+            [ "$code" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "::warning::Public health check did not return 200 (nginx/DNS may lag); ECS localhost check already passed in deploy script"
+          exit 0
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "## ECS quant-trading deploy"
+            echo ""
+            echo "- Ref: \`${{ github.sha }}\`"
+            echo "- Host: \`${ECS_HOST}:${ECS_PORT}\`"
+            echo "- User: \`${ECS_USER}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
