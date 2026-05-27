@@ -28,7 +28,7 @@ function flowTableRows(rows, focus, onRowClick) {
       return `<tr class="clickable${active}" data-industry="${escapeHtml(r.industry)}">
         <td>${escapeHtml(r.industry)}</td>
         <td class="num ${pctClassNum(r.net_amt)}">${fmtYi(r.net_amt)}</td>
-        <td class="${pctClass(r.change_pct)}">${escapeHtml(r.change_pct || "—")}</td>
+        <td class="num ${pctClass(r.change_pct)}">${escapeHtml(r.change_pct || "—")}</td>
       </tr>`;
     })
     .join("");
@@ -38,8 +38,10 @@ function relatedFundsTable(funds, minPct) {
   if (!funds?.length) {
     return '<p class="meta">暂无相关基金。</p>';
   }
-  const head = `<table class="data"><thead><tr>
-    <th>代码</th><th>简称</th><th class="num">暴露%</th><th>日涨跌</th>
+  const head = `<table class="data cols-funds-8"><colgroup>
+    <col /><col /><col /><col /><col /><col /><col /><col />
+  </colgroup><thead><tr>
+    <th>代码</th><th>简称</th><th class="num">暴露%</th><th class="num">日涨跌</th>
     <th class="num">近1月</th><th class="num">近3月</th><th class="num">近1年</th><th>申购</th>
   </tr></thead><tbody>`;
   const body = funds
@@ -48,7 +50,7 @@ function relatedFundsTable(funds, minPct) {
       <td><code><a href="#" data-fund="${escapeHtml(f.code)}">${escapeHtml(f.code)}</a></code></td>
       <td>${escapeHtml(f.short_name || "—")}</td>
       <td class="num"><strong>${f.weight_pct != null ? Number(f.weight_pct).toFixed(2) : "—"}</strong></td>
-      <td class="${pctClass(f.daily_pct)}">${escapeHtml(f.daily_pct || "—")}</td>
+      <td class="num ${pctClass(f.daily_pct)}">${escapeHtml(f.daily_pct || "—")}</td>
       <td class="num ${pctClassNum(f.return_1m)}">${f.return_1m != null ? `${Number(f.return_1m).toFixed(2)}%` : "—"}</td>
       <td class="num ${pctClassNum(f.return_3m)}">${f.return_3m != null ? `${Number(f.return_3m).toFixed(2)}%` : "—"}</td>
       <td class="num ${pctClassNum(f.return_1y)}">${f.return_1y != null ? `${Number(f.return_1y).toFixed(2)}%` : "—"}</td>
@@ -164,11 +166,13 @@ export async function mountDashboard(query) {
 
     html += `<div class="grid-2">
       <section class="panel"><h2>净流入 Top 10</h2>
-        <table class="data"><thead><tr><th>行业</th><th class="num">净额(亿)</th><th>涨跌</th></tr></thead>
+        <table class="data cols-flow-3"><colgroup><col /><col /><col /></colgroup>
+          <thead><tr><th>行业</th><th class="num">净额(亿)</th><th class="num">涨跌</th></tr></thead>
         <tbody>${flowTableRows(data.top_in, focus)}</tbody></table>
       </section>
       <section class="panel"><h2>净流出 Top 10</h2>
-        <table class="data"><thead><tr><th>行业</th><th class="num">净额(亿)</th><th>涨跌</th></tr></thead>
+        <table class="data cols-flow-3"><colgroup><col /><col /><col /></colgroup>
+          <thead><tr><th>行业</th><th class="num">净额(亿)</th><th class="num">涨跌</th></tr></thead>
         <tbody>${flowTableRows(data.top_out, focus)}</tbody></table>
       </section>
     </div>`;

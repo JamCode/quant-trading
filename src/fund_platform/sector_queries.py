@@ -7,9 +7,14 @@ from typing import Any, Optional
 
 import pymysql.cursors
 
+from fund_platform.units import amount_to_yi
+
 
 def _cursor(conn):
     return conn.cursor(pymysql.cursors.DictCursor)
+
+
+_FLOW_YI_KEYS = frozenset({"net_amt", "inflow_amt", "outflow_amt", "float_market_cap"})
 
 
 def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -17,6 +22,8 @@ def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     for k, v in row.items():
         if isinstance(v, (datetime, date)):
             out[k] = v.isoformat() if isinstance(v, date) else v.strftime("%Y-%m-%d %H:%M:%S")
+        elif k in _FLOW_YI_KEYS:
+            out[k] = amount_to_yi(v)
         elif isinstance(v, float):
             out[k] = v
         else:

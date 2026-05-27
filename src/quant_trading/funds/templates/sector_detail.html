@@ -1,4 +1,4 @@
-{% from '_fund_theme.html' import palette_root, palette_light, pct_class, pct_class_str, pe_table_styles, pe_num %}
+{% from '_fund_theme.html' import palette_root, palette_light, pct_class, pct_class_str, pe_table_styles, pe_num, fmt_yi %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -72,7 +72,7 @@
 <body>
   {% set bp = (url_prefix ~ '/') if url_prefix else '/' %}
   <header>
-    <a href="{{ bp }}">← 仪表盘</a> · <a href="{{ bp }}advisor">基金 AI 助手</a> · <a href="{{ bp }}sectors?period={{ period|uq }}&trade_date={{ trade_date|uq }}">行业资金流向</a>
+    <a href="{{ bp }}">← 仪表盘</a> · <a href="{{ bp }}advisor">基金 AI 助手</a> · <a href="{{ bp }}sectors?period={{ period|uq }}&trade_date={{ trade_date|uq }}">行业资金流向</a> · <a href="{{ bp }}stocks">A 股行情</a>
     <h1>{{ industry }}</h1>
     <p class="sub">成分股来自同花顺行业列表 · 行情/市值来自全 A 日表 stock_daily{% if data_source %} · {{ data_source }}{% endif %}{% if lookup_date %} · {{ lookup_date }}{% endif %}</p>
   </header>
@@ -81,10 +81,10 @@
     <div class="stats">
       <span>数据日 <strong>{{ summary.trade_date }}</strong></span>
       <span>区间 <strong>{{ summary.period }}</strong></span>
-      <span>净流入 <strong class="{{ 'up' if summary.net_amt and summary.net_amt > 0 else 'down' }}">{{ summary.net_amt if summary.net_amt is not none else "—" }}</strong> 亿</span>
+      <span>净流入 <strong class="{{ 'up' if summary.net_amt and summary.net_amt > 0 else 'down' }}">{{ fmt_yi(summary.net_amt) }}</strong> 亿</span>
       <span>涨跌 <strong class="{{ pct_class_str(summary.change_pct) }}">{{ summary.change_pct or "—" }}</strong></span>
       <span>家数 <strong>{{ summary.company_count or "—" }}</strong></span>
-      <span>流通市值合计 <strong>{{ summary.float_market_cap if summary.float_market_cap is not none else "—" }}</strong> 亿</span>
+      <span>流通市值合计 <strong>{{ fmt_yi(summary.float_market_cap) }}</strong> 亿</span>
       <span>领涨 <strong>{{ summary.leader_stock or "—" }}</strong></span>
     </div>
     {% elif trade_date %}
@@ -109,7 +109,7 @@
         <tbody>
           {% for s in constituents %}
           <tr>
-            <td>{{ s.code }}</td>
+            <td><a href="{{ bp }}stocks/{{ s.code }}">{{ s.code }}</a></td>
             <td class="name">{{ s.name }}</td>
             <td class="num">{{ pe_num(s.price) }}</td>
             <td class="num {{ pct_class(s.change_pct) }}">
@@ -118,8 +118,8 @@
             <td class="num">{{ pe_num(s.pe_dynamic) }}</td>
             <td class="num">{{ pe_num(s.pb) }}</td>
             <td class="num">{{ pe_num(s.volume_ratio) }}</td>
-            <td class="num">{{ pe_num(s.float_market_cap) }}</td>
-            <td class="num">{{ pe_num(s.total_market_cap) }}</td>
+            <td class="num">{{ fmt_yi(s.float_market_cap) }}</td>
+            <td class="num">{{ fmt_yi(s.total_market_cap) }}</td>
             <td class="num">{{ pe_num(s.turnover_pct) }}</td>
             <td class="num">{{ pe_num(s.amplitude_pct) }}</td>
             <td class="num">{{ pe_num(s.change_60d_pct) }}</td>

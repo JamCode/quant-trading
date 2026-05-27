@@ -1,5 +1,6 @@
 import { apiGet, escapeHtml, fmtPct, fmtYi, pctClassNum } from "../api.js";
-import { openDrawer, setDrawerBody, setDrawerLoading } from "./drawer.js";
+import { navigate } from "../router.js";
+import { closeDrawer, openDrawer, setDrawerBody, setDrawerLoading } from "./drawer.js";
 
 function renderSectorBody(data) {
   const summary = data.summary || {};
@@ -19,7 +20,9 @@ function renderSectorBody(data) {
       <span>流通市值 <strong>${fmtYi(summary.float_market_cap)}</strong> 亿</span>
     </div>`;
   }
-  html += `<table class="data"><thead><tr>
+  html += `<table class="data"><colgroup>
+    <col style="width:16%" /><col style="width:38%" /><col style="width:18%" /><col style="width:28%" />
+  </colgroup><thead><tr>
     <th>代码</th><th>名称</th><th class="num">涨跌幅</th><th class="num">流通市值(亿)</th>
   </tr></thead><tbody>`;
   if (!rows.length) {
@@ -27,7 +30,7 @@ function renderSectorBody(data) {
   } else {
     rows.forEach((r) => {
       html += `<tr>
-        <td><code>${escapeHtml(r.code)}</code></td>
+        <td><a href="#" class="stock-code-link" data-code="${escapeHtml(r.code)}"><code>${escapeHtml(r.code)}</code></a></td>
         <td>${escapeHtml(r.name || "")}</td>
         <td class="num ${pctClassNum(r.change_pct)}">${fmtPct(r.change_pct)}</td>
         <td class="num">${fmtYi(r.float_market_cap)}</td>
@@ -47,6 +50,17 @@ export async function openSectorDrawer({ industry, period, trade_date }) {
       trade_date,
     });
     setDrawerBody(renderSectorBody(data));
+    document.querySelectorAll("#drawer-body .stock-code-link").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        const sym = link.getAttribute("data-code");
+        if (sym) {
+          closeDrawer();
+          navigate(`/stocks/${sym}`, { query: {} });
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }
+      });
+    });
   } catch (err) {
     setDrawerBody(`<div class="banner-error">加载失败：${escapeHtml(err.message)}</div>`);
   }

@@ -21,6 +21,7 @@ logs/
 
 # Data & secrets (never commit real keys)
 .env
+deploy/ecs/cloud-assistant.env
 *.pem
 *.csv
 *.parquet

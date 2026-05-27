@@ -22,13 +22,17 @@ function bindCloseHandlers() {
   });
 }
 
-export function openDrawer({ title, html, onClose }) {
+export function openDrawer({ title, html, onClose, wide = false }) {
   bindCloseHandlers();
   const el = root();
   if (!el) {
     return;
   }
   onCloseCallback = onClose || null;
+  const panel = el.querySelector(".drawer-panel");
+  if (panel) {
+    panel.classList.toggle("drawer-wide", Boolean(wide));
+  }
   titleEl().textContent = title || "";
   bodyEl().innerHTML = html || '<p class="loading">加载中…</p>';
   el.classList.remove("hidden");

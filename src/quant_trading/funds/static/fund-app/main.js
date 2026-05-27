@@ -9,12 +9,15 @@ import { mountDashboard } from "./views/dashboard.js";
 import { mountFunds } from "./views/funds.js";
 import { mountSectors } from "./views/sectors.js";
 import { mountValuation } from "./views/valuation.js";
+import { mountStockDetail } from "./views/stock-detail.js";
+import { mountStocks } from "./views/stocks.js";
 
 const NAV = [
   { path: "/", label: "行业仪表盘", title: "行业仪表盘" },
   { path: "/sectors", label: "行业资金流向", title: "行业资金流向" },
   { path: "/valuation", label: "宽基 PE", title: "宽基 PE" },
   { path: "/funds", label: "基金目录", title: "基金目录" },
+  { path: "/stocks", label: "A 股行情", title: "A 股行情" },
   { path: "/advisor", label: "基金 AI 助手", title: "基金 AI 助手" },
   { path: "/crawler", label: "爬虫任务", title: "爬虫任务", muted: true },
 ];
@@ -26,7 +29,11 @@ function renderSidebar(activePath) {
   }
   let html = '<div class="sidebar-brand">Quant Funds</div>';
   NAV.forEach((item) => {
-    const active = activePath === item.path ? " active" : "";
+    const active =
+      activePath === item.path ||
+      (item.path === "/stocks" && activePath.startsWith("/stocks/"))
+        ? " active"
+        : "";
     const muted = item.muted ? " nav-muted" : "";
     html += `<a href="#" class="${active}${muted}" data-nav data-path="${item.path}">${item.label}</a>`;
   });
@@ -34,7 +41,11 @@ function renderSidebar(activePath) {
 }
 
 function setTitle(path) {
-  const item = NAV.find((n) => n.path === path) || NAV[0];
+  let item = NAV.find((n) => n.path === path);
+  if (!item && path.startsWith("/stocks/")) {
+    item = NAV.find((n) => n.path === "/stocks");
+  }
+  item = item || NAV[0];
   document.title = item.title;
   const el = document.getElementById("view-title");
   if (el) {
@@ -71,6 +82,15 @@ async function onRoute({ path, query }) {
     await mountValuation(query);
   } else if (normalized === "/funds") {
     await mountFunds(query);
+  } else if (normalized === "/stocks") {
+    await mountStocks(query);
+  } else if (/^\/stocks\/[0-9]{6}$/.test(normalized)) {
+    const stockCode = normalized.split("/")[2];
+    await mountStockDetail(stockCode, query);
+    const el = document.getElementById("view-title");
+    if (el) {
+      el.textContent = `个股 ${stockCode}`;
+    }
   } else if (normalized === "/advisor") {
     await mountAdvisor(query);
   } else if (normalized === "/crawler") {

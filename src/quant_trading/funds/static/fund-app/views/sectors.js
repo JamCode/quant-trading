@@ -40,8 +40,8 @@ export async function mountSectors(query) {
       rowsHtml += `<tr class="clickable" data-industry="${escapeHtml(r.industry)}">
         <td>${escapeHtml(r.industry)}</td>
         <td class="num ${pctClassNum(r.net_amt)}">${fmtYi(r.net_amt)}</td>
-        <td class="num">${fmtYi(r.float_market_cap)}</td>
-        <td class="${pctClass(r.change_pct)}">${escapeHtml(r.change_pct || "—")}</td>
+        <td class="num">${r.float_market_cap != null ? fmtYi(r.float_market_cap) : '<span class="meta" title="需运行行业流通市值同步">—</span>'}</td>
+        <td class="num ${pctClass(r.change_pct)}">${escapeHtml(r.change_pct || "—")}</td>
         <td>${escapeHtml(r.leader_stock || "—")}</td>
       </tr>`;
     });
@@ -57,8 +57,9 @@ export async function mountSectors(query) {
       </form>
       <p class="meta">数据日 <strong>${escapeHtml(data.trade_date || "—")}</strong> · 区间 <strong>${escapeHtml(period)}</strong> · 共 ${(data.items || []).length} 个行业</p>
       <section class="panel">
-        <table class="data"><thead><tr>
-          <th>行业</th><th class="num">净额(亿)</th><th class="num">流通市值(亿)</th><th>涨跌</th><th>领涨股</th>
+        <table class="data cols-sector-5"><colgroup><col /><col /><col /><col /><col /></colgroup>
+          <thead><tr>
+          <th>行业</th><th class="num">净额(亿)</th><th class="num">流通市值(亿)</th><th class="num">涨跌</th><th>领涨股</th>
         </tr></thead><tbody>${rowsHtml}</tbody></table>
       </section>`;
 

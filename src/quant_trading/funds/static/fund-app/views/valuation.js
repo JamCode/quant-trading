@@ -10,6 +10,75 @@ function peNum(v) {
   return Number(v).toFixed(2);
 }
 
+function indexTableHead(region) {
+  if (region === "cn") {
+    return `<tr>
+      <th>指数</th>
+      <th class="num">滚动 PE</th>
+      <th class="num">静态 PE</th>
+      <th>数据日</th>
+    </tr>`;
+  }
+  if (region === "us") {
+    return `<tr>
+      <th>指数</th>
+      <th class="num">PE(TTM)</th>
+      <th class="num">CAPE</th>
+      <th>数据日</th>
+    </tr>`;
+  }
+  return `<tr>
+    <th>指数</th>
+    <th class="num">PE(TTM)</th>
+    <th>数据日</th>
+  </tr>`;
+}
+
+function indexTableColgroup(region) {
+  if (region === "cn") {
+    return `<colgroup>
+      <col class="col-name" style="width:40%" />
+      <col style="width:20%" /><col style="width:20%" /><col style="width:20%" />
+    </colgroup>`;
+  }
+  if (region === "us") {
+    return `<colgroup>
+      <col class="col-name" style="width:40%" />
+      <col style="width:20%" /><col style="width:20%" /><col style="width:20%" />
+    </colgroup>`;
+  }
+  return `<colgroup>
+    <col class="col-name" style="width:50%" />
+    <col style="width:25%" /><col style="width:25%" />
+  </colgroup>`;
+}
+
+function indexTableRow(row, region) {
+  const cells = [`<td class="name">${escapeHtml(row.index_name)}</td>`];
+  if (region === "cn") {
+    cells.push(
+      `<td class="num">${peNum(row.pe_ttm)}</td>`,
+      `<td class="num">${peNum(row.pe_static)}</td>`
+    );
+  } else if (region === "us") {
+    cells.push(
+      `<td class="num">${peNum(row.pe_ttm)}</td>`,
+      `<td class="num">${peNum(row.pe_cape)}</td>`
+    );
+  } else {
+    cells.push(`<td class="num">${peNum(row.pe_ttm)}</td>`);
+  }
+  cells.push(`<td>${escapeHtml(row.trade_date || "—")}</td>`);
+  return cells.join("");
+}
+
+function indexTableColspan(region) {
+  if (region === "cn" || region === "us") {
+    return 4;
+  }
+  return 3;
+}
+
 async function loadChartJs() {
   if (window.Chart) {
     return;
@@ -89,13 +158,9 @@ export async function mountValuation(query) {
       let rows = "";
       items.forEach((row) => {
         const active = row.index_code === indexCode ? " active-row" : "";
-        rows += `<tr class="clickable${active}" data-code="${escapeHtml(row.index_code)}">
-          <td>${escapeHtml(row.index_name)}</td>
-          <td class="num">${peNum(row.pe_ttm)}</td>
-          <td class="num">${region === "cn" ? peNum(row.pe_static) : region === "us" ? peNum(row.pe_cape) : "—"}</td>
-          <td>${escapeHtml(row.trade_date)}</td>
-        </tr>`;
+        rows += `<tr class="clickable${active}" data-code="${escapeHtml(row.index_code)}">${indexTableRow(row, region)}</tr>`;
       });
+      const colspan = indexTableColspan(region);
       host.innerHTML = `
         <div class="region-tabs" id="val-tabs">
           <a href="#" data-tab="index" class="active">宽基指数</a>
@@ -109,9 +174,9 @@ export async function mountValuation(query) {
             )
             .join("")}
         </div>
-        <section class="panel"><h2>最新 PE</h2>
-          <table class="data"><thead><tr><th>指数</th><th class="num">PE</th><th class="num">其他</th><th>日期</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="4">暂无</td></tr>'}</tbody></table>
+        <section class="panel"><h2>${region === "cn" ? "A股" : region === "hk" ? "港股" : "美股"} · 最新 PE</h2>
+          <table class="pe-table">${indexTableColgroup(region)}<thead>${indexTableHead(region)}</thead>
+          <tbody>${rows || `<tr><td colspan="${colspan}" class="empty">暂无</td></tr>`}</tbody></table>
         </section>
         <section class="panel"><h2>${escapeHtml(history.index_name || indexCode)} · 历史</h2>
           <div class="chart-wrap" style="height:320px"><canvas id="peChart"></canvas></div>
@@ -143,10 +208,11 @@ export async function mountValuation(query) {
       items.forEach((row) => {
         const active = row.industry_code === industryCode ? " active-row" : "";
         rows += `<tr class="clickable${active}" data-code="${escapeHtml(row.industry_code)}">
-          <td>${escapeHtml(row.industry_name)}</td>
+          <td class="name">${escapeHtml(row.industry_name)}</td>
           <td class="num">${peNum(row.pe_weighted)}</td>
           <td class="num">${peNum(row.pe_median)}</td>
-          <td>${escapeHtml(row.trade_date)}</td>
+          <td class="num">${peNum(row.pe_avg)}</td>
+          <td>${escapeHtml(row.trade_date || "—")}</td>
         </tr>`;
       });
       host.innerHTML = `
@@ -155,9 +221,16 @@ export async function mountValuation(query) {
           <a href="#" data-tab="industry" class="active">行业 PE</a>
         </div>
         <p class="meta">库内最新 ${escapeHtml(latest.trade_date || "—")}</p>
-        <section class="panel"><h2>国证行业 PE</h2>
-          <table class="data"><thead><tr><th>行业</th><th class="num">加权</th><th class="num">中位</th><th>日期</th></tr></thead>
-          <tbody>${rows}</tbody></table>
+        <section class="panel"><h2>国证行业 · 最新静态 PE</h2>
+          <table class="pe-table">
+            <colgroup>
+              <col class="col-name" style="width:32%" />
+              <col style="width:17%" /><col style="width:17%" /><col style="width:17%" /><col style="width:17%" />
+            </colgroup>
+            <thead><tr>
+              <th>行业</th><th class="num">加权 PE</th><th class="num">中位数</th><th class="num">算术平均</th><th>数据日</th>
+            </tr></thead>
+          <tbody>${rows || '<tr><td colspan="5" class="empty">暂无</td></tr>'}</tbody></table>
         </section>
         <section class="panel"><h2>${escapeHtml(history.industry_name || "")} · 历史</h2>
           <div class="chart-wrap" style="height:320px"><canvas id="peChart"></canvas></div>

@@ -35,9 +35,16 @@ export function fmtYi(value) {
   if (value === null || value === undefined || value === "") {
     return "—";
   }
-  const n = Number(value);
+  let n = Number(value);
   if (Number.isNaN(n)) {
     return "—";
+  }
+  // Legacy rows: 元 (>=1e6) or mistaken ÷1e4 (1e5–1e6 band)
+  const av = Math.abs(n);
+  if (av >= 1_000_000) {
+    n = n / 1e8;
+  } else if (av >= 100_000) {
+    n = n / 1e4;
   }
   return n.toFixed(2);
 }

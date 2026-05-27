@@ -51,6 +51,41 @@ cp deploy/ecs/fund-stack.env.example deploy/ecs/fund-stack.env
 DATABASE_URL=mysql+pymysql://fund_app:你的密码@127.0.0.1:3306/fund_svc
 ```
 
+## 云助手 + 阿里云 CLI（本机 SSH 不可用时）
+
+经 **OpenAPI** 在 ECS 内执行命令，不经过本机 `22/2222` SSH。适合公司 WiFi 掐 SSH、但仍能访问阿里云 API 的场景。
+
+### 一次性配置
+
+```bash
+# 1) 安装 CLI
+./deploy/ecs/install-aliyun-cli.sh
+
+# 2) 配置 AccessKey（RAM 子账号，勿提交 Git）
+aliyun configure
+
+# 3) 环境文件
+cp deploy/ecs/cloud-assistant.env.example deploy/ecs/cloud-assistant.env
+# 编辑地域；实例 ID 可留空（按公网 IP 自动查）
+```
+
+控制台确认实例 **云助手 → 运行中**。RAM 用户至少需：`ecs:RunCommand`、`ecs:DescribeInvocations`、`ecs:DescribeInvocationResults`、`ecs:DescribeInstances`（建议按实例 ID 收紧，见阿里云 RAM 文档）。
+
+### 日常命令
+
+```bash
+# 首次：在 ECS 上 git clone（若还没有仓库）
+./deploy/ecs/cloud-assistant-bootstrap-git.sh
+
+# 部署：git pull + pip + 重启 fund 服务
+./deploy/ecs/cloud-assistant-deploy.sh
+
+# 任意命令（root）
+./deploy/ecs/cloud-assistant-run.sh 'systemctl --user -u wanghan status quant-trading-fund-web.service || true'
+```
+
+与 **GitHub Actions** 可并存：Actions 用 rsync 全量同步；云助手适合 `git pull` 已 clone 的仓库。
+
 ## GitHub Actions 自动部署（推荐：本机 WiFi 封 SSH 时）
 
 `push` 到 **`main`** 且变更 `src/`、`deploy/ecs/`、`pyproject.toml`、`schema/mysql/` 时，运行 [`.github/workflows/ecs-quant-deploy.yml`](../../.github/workflows/ecs-quant-deploy.yml)。

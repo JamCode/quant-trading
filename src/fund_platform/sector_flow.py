@@ -12,6 +12,7 @@ import requests
 
 from fund_platform import settings as fp_settings
 from fund_platform.db import get_engine
+from fund_platform.units import amount_to_yi
 
 logger = logging.getLogger(__name__)
 
@@ -120,10 +121,7 @@ def _parse_amount(value: Any) -> Optional[float]:
 
 def _em_amount_to_yi(value: Any) -> Optional[float]:
     """East Money push2 fund-flow fields are yuan; DB/UI expect 亿元."""
-    v = _parse_amount(value)
-    if v is None:
-        return None
-    return round(v / 1e8, 2)
+    return amount_to_yi(_parse_amount(value))
 
 
 def _parse_int(value: Any) -> Optional[int]:
@@ -154,9 +152,9 @@ def _normalize_row(period: str, rec: dict[str, Any]) -> Optional[dict[str, Any]]
         "industry": industry,
         "industry_index": str(rec.get("行业指数", "") or "").strip(),
         "change_pct": str(change_val or "").strip(),
-        "inflow_amt": _parse_amount(rec.get("流入资金")),
-        "outflow_amt": _parse_amount(rec.get("流出资金")),
-        "net_amt": _parse_amount(rec.get("净额")),
+        "inflow_amt": amount_to_yi(rec.get("流入资金")),
+        "outflow_amt": amount_to_yi(rec.get("流出资金")),
+        "net_amt": amount_to_yi(rec.get("净额")),
         "company_count": _parse_int(rec.get("公司家数")),
         "leader_stock": str(rec.get("领涨股", "") or "").strip(),
         "leader_change_pct": leader_chg,

@@ -54,3 +54,16 @@ def funds_catalog_meta(conn) -> dict[str, Any]:
         ],
         "industry_options": fund_catalog_queries.list_industry_filter_options(conn),
     }
+
+
+def stocks_catalog_meta(conn) -> dict[str, Any]:
+    from fund_platform import stock_queries
+
+    latest = stock_queries.latest_stock_daily_date(conn)
+    return {
+        "latest_trade_date": latest,
+        "trade_dates": stock_queries.list_stock_daily_dates(conn),
+        "sort_options": [
+            {"id": sid, "label": label} for sid, label in stock_queries.STOCK_SORT_OPTIONS
+        ],
+    }

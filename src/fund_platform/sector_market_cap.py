@@ -63,7 +63,8 @@ def _aggregate_cap(cur, trade_date: str, industry: str) -> tuple[Optional[float]
         return None, 0, 0
     cap_sum = row[0] if not isinstance(row, dict) else row.get("cap_sum")
     cnt = int(row[1] if not isinstance(row, dict) else row.get("cnt") or 0)
-    missing = int(row[2] if not isinstance(row, dict) else row.get("missing") or 0)
+    missing_raw = row[2] if not isinstance(row, dict) else row.get("missing")
+    missing = int(missing_raw or 0)
     if cap_sum is not None:
         cap_sum = round(float(cap_sum), 2)
     return cap_sum, cnt, missing

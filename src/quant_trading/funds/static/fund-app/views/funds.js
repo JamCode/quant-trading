@@ -41,8 +41,8 @@ export async function mountFunds(query) {
         <td><code>${escapeHtml(r.code)}</code></td>
         <td>${escapeHtml(r.short_name || "")}</td>
         <td>${escapeHtml(r.fund_type || "")}</td>
-        <td class="${pctClass(r.daily_pct)}">${escapeHtml(r.daily_pct || "—")}</td>
-        <td>${escapeHtml(r.nav_unit || "—")}</td>
+        <td class="num ${pctClass(r.daily_pct)}">${escapeHtml(r.daily_pct || "—")}</td>
+        <td class="num">${escapeHtml(r.nav_unit || "—")}</td>
       </tr>`;
     });
     if (!rows) {
@@ -57,8 +57,11 @@ export async function mountFunds(query) {
         <button type="submit">查询</button>
       </form>
       <section class="panel">
-        <table class="data"><thead><tr>
-          <th>代码</th><th>简称</th><th>类型</th><th>日涨跌</th><th>净值</th>
+        <table class="data"><colgroup>
+          <col style="width:14%" /><col style="width:32%" /><col style="width:22%" />
+          <col style="width:16%" /><col style="width:16%" />
+        </colgroup><thead><tr>
+          <th>代码</th><th>简称</th><th>类型</th><th class="num">日涨跌</th><th class="num">净值</th>
         </tr></thead><tbody>${rows}</tbody></table>
       </section>
       <div class="toolbar">

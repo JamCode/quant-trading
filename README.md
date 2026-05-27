@@ -78,7 +78,7 @@ python examples/run_web.py
 | `FUND_EXPOSURE_MIN_PCT` | 仪表盘相关基金最低行业暴露%（默认 `10`） |
 | `DASHBOARD_DEFAULT_PERIOD` | 首页默认统计区间（默认 `即时`） |
 
-HTTP：`GET /`（仪表盘）、`GET /api/dashboard`、`GET /funds`（目录）、`GET /api/funds`、`GET /funds/{code}`、`GET /sectors`、`GET /api/sector-fund-flow`、`GET /crawler`（爬虫任务与状态）、`GET /api/crawler/tasks`、`GET /api/crawler/runs` 等。DDL 依次执行 `001`～`012`（`011`/`012` 为爬虫任务表；`008_fund_industry_link.sql` 为行业–基金关联表）。
+HTTP：`GET /`（仪表盘）、`GET /api/dashboard`、`GET /funds`（目录）、`GET /api/funds`、`GET /funds/{code}`、`GET /stocks`（A 股列表）、`GET /api/stocks`、`GET /api/stocks/{code}`、`GET /api/stocks/{code}/price-history`、`GET /sectors`、`GET /api/sector-fund-flow`、`GET /crawler`（爬虫任务与状态）、`GET /api/crawler/tasks`、`GET /api/crawler/runs` 等。DDL 依次执行 `001`～`017`（`017_stock_price_daily.sql` 为个股日 K 懒加载缓存；`011`/`012` 为爬虫任务表；`008_fund_industry_link.sql` 为行业–基金关联表）。
 
 **行业–基金管道（首跑，在 DDL 008 之后）**：
 

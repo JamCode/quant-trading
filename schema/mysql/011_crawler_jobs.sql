@@ -28,9 +28,7 @@ INSERT INTO crawler_tasks (task_key, display_name, schedule_kind, schedule_summa
 VALUES
   ('fund_mysql_daily_sync', '基金名录 + 净值快照', 'cron', '', 1, 10),
   ('stock_daily_sync', 'A 股现货日线', 'cron', '', 1, 20),
-  ('sector_fund_flow_daily', '行业资金流向', 'cron', '', 1, 30),
   ('fund_holdings_pipeline', '基金持仓 + 行业暴露', 'cron', '', 1, 40),
-  ('market_index_intraday', '市场指数盘中', 'interval', '', 1, 50),
   ('market_index_daily_cn', '市场指数日收盘（A 股）', 'cron', '', 1, 51),
   ('market_index_daily_hk', '市场指数日收盘（港股）', 'cron', '', 1, 52),
   ('market_index_daily_global', '市场指数日收盘（全球）', 'cron', '', 1, 53)

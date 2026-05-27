@@ -1,4 +1,4 @@
-{% from '_fund_theme.html' import palette_root, palette_light, pct_class, pct_class_str %}
+{% from '_fund_theme.html' import palette_root, palette_light, pct_class, pct_class_str, fmt_yi %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -180,7 +180,7 @@
             <tr class="clickable{% if r.industry == focus_industry %} active-row{% endif %}"
                 onclick="location.href='{{ bp }}?period={{ period|uq }}&trade_date={{ trade_date|uq }}&industry={{ r.industry|uq }}'">
               <td class="ind">{{ r.industry }}</td>
-              <td class="up">{{ r.net_amt if r.net_amt is not none else "—" }}</td>
+              <td class="up">{{ fmt_yi(r.net_amt) }}</td>
               <td class="{{ pct_class_str(r.change_pct) }}">{{ r.change_pct or "—" }}</td>
             </tr>
             {% else %}
@@ -198,7 +198,7 @@
             <tr class="clickable{% if r.industry == focus_industry %} active-row{% endif %}"
                 onclick="location.href='{{ bp }}?period={{ period|uq }}&trade_date={{ trade_date|uq }}&industry={{ r.industry|uq }}'">
               <td class="ind">{{ r.industry }}</td>
-              <td class="down">{{ r.net_amt if r.net_amt is not none else "—" }}</td>
+              <td class="down">{{ fmt_yi(r.net_amt) }}</td>
               <td class="{{ pct_class_str(r.change_pct) }}">{{ r.change_pct or "—" }}</td>
             </tr>
             {% else %}
@@ -213,9 +213,9 @@
       <h2>当前行业 · 相关基金（暴露 ≥ {{ min_exposure_pct }}%）</h2>
       {% if focus_industry and summary %}
       <div class="stats">
-        <span>净流入 <strong class="{{ 'up' if summary.net_amt and summary.net_amt > 0 else 'down' }}">{{ summary.net_amt if summary.net_amt is not none else "—" }}</strong> 亿</span>
+        <span>净流入 <strong class="{{ 'up' if summary.net_amt and summary.net_amt > 0 else 'down' }}">{{ fmt_yi(summary.net_amt) }}</strong> 亿</span>
         <span>涨跌 <strong class="{{ pct_class_str(summary.change_pct) }}">{{ summary.change_pct or "—" }}</strong></span>
-        <span>流通市值 <strong>{{ summary.float_market_cap if summary.float_market_cap is not none else "—" }}</strong> 亿</span>
+        <span>流通市值 <strong>{{ fmt_yi(summary.float_market_cap) }}</strong> 亿</span>
         <span><a href="{{ bp }}sectors/{{ focus_industry|uq }}?period={{ period|uq }}&trade_date={{ trade_date|uq }}">成分股与详情 →</a></span>
         <span><a href="{{ bp }}funds?industry={{ focus_industry|uq }}&amp;sort=return_1y&amp;order=desc">全目录筛选 →</a></span>
       </div>

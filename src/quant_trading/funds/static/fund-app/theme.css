@@ -204,6 +204,7 @@ table.data {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
+  table-layout: fixed;
 }
 
 table.data th,
@@ -211,6 +212,9 @@ table.data td {
   padding: 0.45rem 0.5rem;
   border-bottom: 1px solid var(--border);
   text-align: left;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 table.data th {
@@ -219,9 +223,52 @@ table.data th {
   font-weight: 600;
 }
 
+/* Header and body must share alignment for numeric columns */
+table.data th.num,
 table.data td.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Side-by-side flow tables: identical column widths */
+table.data.cols-flow-3 col:nth-child(1) {
+  width: 42%;
+}
+table.data.cols-flow-3 col:nth-child(2) {
+  width: 33%;
+}
+table.data.cols-flow-3 col:nth-child(3) {
+  width: 25%;
+}
+
+table.data.cols-sector-5 col:nth-child(1) {
+  width: 22%;
+}
+table.data.cols-sector-5 col:nth-child(2),
+table.data.cols-sector-5 col:nth-child(3),
+table.data.cols-sector-5 col:nth-child(4) {
+  width: 14%;
+}
+table.data.cols-sector-5 col:nth-child(5) {
+  width: 36%;
+}
+
+table.data.cols-funds-8 col:nth-child(1) {
+  width: 10%;
+}
+table.data.cols-funds-8 col:nth-child(2) {
+  width: 18%;
+}
+table.data.cols-funds-8 col:nth-child(3),
+table.data.cols-funds-8 col:nth-child(4),
+table.data.cols-funds-8 col:nth-child(5),
+table.data.cols-funds-8 col:nth-child(6),
+table.data.cols-funds-8 col:nth-child(7) {
+  width: 11%;
+}
+table.data.cols-funds-8 col:nth-child(8) {
+  width: 16%;
 }
 
 table.data tr.clickable {
@@ -234,6 +281,45 @@ table.data tr.clickable:hover {
 
 table.data tr.active-row {
   background: var(--active);
+}
+
+table.pe-table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+table.pe-table th,
+table.pe-table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+table.pe-table th {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+table.pe-table th.num,
+table.pe-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+table.pe-table td.name {
+  font-weight: 600;
+}
+
+table.pe-table td.empty {
+  text-align: center;
+  color: var(--muted);
 }
 
 .up {
@@ -316,10 +402,42 @@ table.data tr.active-row {
   padding: 0 0.25rem;
 }
 
+.drawer-panel.drawer-wide {
+  width: min(720px, 96vw);
+}
+
 .drawer-body {
   padding: 1rem;
   overflow: auto;
   flex: 1;
+}
+
+.drawer-body section.panel {
+  margin-bottom: 1rem;
+}
+
+.drawer-body dl.fund-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.drawer-body dl.fund-dl dt {
+  color: var(--muted);
+  margin: 0;
+}
+
+.drawer-body dl.fund-dl dd {
+  margin: 0;
+}
+
+.drawer-scroll {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .stats {
@@ -416,6 +534,41 @@ code {
 .chart-wrap {
   position: relative;
   min-height: 280px;
+}
+
+.view-heading {
+  margin: 0.5rem 0;
+  font-size: 1.25rem;
+}
+
+.detail-dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+
+.detail-dl dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.detail-dl dd {
+  margin: 0.15rem 0 0;
+  font-weight: 600;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
 }
 
 .dim {

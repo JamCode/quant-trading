@@ -32,6 +32,11 @@ from fund_platform.sector_detail import load_sector_detail_bundle
 from fund_platform.detail import ensure_fresh_detail
 from fund_platform.market_index import align_index_closes_to_dates, query_index_daily_closes
 from fund_platform.nav_history import ensure_nav_history, query_nav_history
+from fund_platform.stock_price_history import (
+    ensure_stock_price_daily,
+    normalize_stock_code,
+    query_stock_price_daily,
+)
 from fund_platform.peer_rank import ensure_peer_rank, query_peer_rank
 from fund_platform.peer_same_type import (
     ensure_peer_same_type,
@@ -225,6 +230,122 @@ def api_meta_flow(conn=Depends(get_conn)):
 @app.get("/api/meta/funds")
 def api_meta_funds(conn=Depends(get_conn)):
     return web_meta_queries.funds_catalog_meta(conn)
+
+
+@app.get("/api/meta/stocks")
+def api_meta_stocks(conn=Depends(get_conn)):
+    return web_meta_queries.stocks_catalog_meta(conn)
+
+
+def _require_stock_code(code: str) -> str:
+    sym = normalize_stock_code(code)
+    if not sym:
+        raise HTTPException(status_code=404, detail="unknown stock code")
+    return sym
+
+
+@app.get("/api/stocks")
+def api_stocks(
+    conn=Depends(get_conn),
+    trade_date: Optional[str] = Query(default=None),
+    q: Optional[str] = Query(default=None),
+    sort: str = Query(default="change_pct"),
+    order: str = Query(default="desc"),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=50, ge=1, le=200),
+):
+    td = trade_date or stock_queries.latest_stock_daily_date(conn)
+    if not td:
+        return {
+            "trade_date": None,
+            "page": page,
+            "per_page": per_page,
+            "total": 0,
+            "pages": 1,
+            "items": [],
+        }
+    offset, page = _page_slice(page, per_page)
+    items, total = stock_queries.query_stock_list(
+        conn,
+        trade_date=td,
+        q=q,
+        sort=sort,
+        order=order,
+        limit=per_page,
+        offset=offset,
+    )
+    pages = max(1, (total + per_page - 1) // per_page)
+    return {
+        "trade_date": td,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "pages": pages,
+        "items": items,
+        "filters": {"q": q, "sort": sort, "order": order, "trade_date": td},
+    }
+
+
+@app.get("/api/stocks/{code}")
+def api_stock_detail(
+    code: str,
+    conn=Depends(get_conn),
+    trade_date: Optional[str] = Query(default=None),
+):
+    sym = _require_stock_code(code)
+    snap = stock_queries.query_stock_snapshot(conn, sym, trade_date=trade_date)
+    if not snap:
+        raise HTTPException(status_code=404, detail="no snapshot for stock on trade date")
+    td = trade_date or snap.get("trade_date") or stock_queries.latest_stock_daily_date(conn)
+    industries = stock_queries.query_stock_industries(conn, sym, trade_date=td)
+    return {"snapshot": snap, "industries": industries, "trade_date": td}
+
+
+@app.get("/api/stocks/{code}/price-history")
+def api_stock_price_history(
+    code: str,
+    conn=Depends(get_conn),
+    refresh: bool = Query(default=False),
+    limit: int = Query(default=250, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
+    order: str = Query(default="asc"),
+):
+    sym = _require_stock_code(code)
+    ord_norm = "asc" if order.lower() == "asc" else "desc"
+    try:
+        meta = ensure_stock_price_daily(conn, sym, force=refresh)
+        if meta.get("source") in ("empty", "invalid") and meta.get("total", 0) == 0:
+            return {
+                **meta,
+                "limit": limit,
+                "offset": offset,
+                "order": ord_norm,
+                "items": [],
+                "total": 0,
+            }
+        if meta.get("source") == "invalid":
+            raise HTTPException(status_code=404, detail="unknown stock code")
+        _, total = query_stock_price_daily(conn, sym, limit=1, offset=0, order="desc")
+        if ord_norm == "asc" and offset == 0:
+            items_desc, _ = query_stock_price_daily(
+                conn, sym, limit=limit, offset=0, order="desc"
+            )
+            items = list(reversed(items_desc))
+        else:
+            items, _ = query_stock_price_daily(
+                conn, sym, limit=limit, offset=offset, order=ord_norm
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Stock price history fetch failed for %s", sym)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        **meta,
+        "limit": limit,
+        "offset": offset,
+        "order": ord_norm,
+        "items": items,
+        "total": total,
+    }
 
 
 @app.get("/api/sectors/{industry:path}")
@@ -682,6 +803,17 @@ def api_dashboard(
 @app.get("/funds", response_class=HTMLResponse)
 def funds_catalog(request: Request):
     return _render_shell(request, page_title="基金目录")
+
+
+@app.get("/stocks", response_class=HTMLResponse)
+def stocks_catalog(request: Request):
+    return _render_shell(request, page_title="A 股行情")
+
+
+@app.get("/stocks/{code}", response_class=HTMLResponse)
+def stock_detail_page(request: Request, code: str):
+    _require_stock_code(code)
+    return _render_shell(request, page_title="个股详情")
 
 
 class AdvisorParseBody(BaseModel):
