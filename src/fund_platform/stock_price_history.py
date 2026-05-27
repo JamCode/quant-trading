@@ -269,6 +269,96 @@ def query_stock_price_daily(
     return items, total
 
 
+def _load_close_series(conn, code: str) -> list[tuple[str, float]]:
+    sym = normalize_stock_code(code)
+    if not sym:
+        return []
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT trade_date, close
+        FROM stock_price_daily
+        WHERE code = %s AND close IS NOT NULL
+        ORDER BY trade_date ASC
+        """,
+        (sym,),
+    )
+    out: list[tuple[str, float]] = []
+    for row in cur.fetchall():
+        td = row["trade_date"]
+        if isinstance(td, date):
+            td = td.isoformat()
+        close = _num(row.get("close"))
+        if close is not None:
+            out.append((str(td)[:10], close))
+    return out
+
+
+def compute_period_returns(
+    series: list[tuple[str, float]],
+    as_of: str,
+) -> tuple[Optional[float], Optional[float]]:
+    """60 trading-day and calendar-YTD % from ascending (date, close) bars."""
+    if not series:
+        return None, None
+    as_of = as_of[:10]
+    idx: Optional[int] = None
+    for i, (d, _) in enumerate(series):
+        if d <= as_of:
+            idx = i
+        else:
+            break
+    if idx is None:
+        return None, None
+    as_close = series[idx][1]
+
+    change_60d: Optional[float] = None
+    if idx >= 60:
+        base = series[idx - 60][1]
+        if base:
+            change_60d = round((as_close / base - 1) * 100, 4)
+
+    change_ytd: Optional[float] = None
+    year = as_of[:4]
+    ytd_base: Optional[float] = None
+    for d, c in series:
+        if d[:4] == year:
+            ytd_base = c
+            break
+    if ytd_base and ytd_base > 0:
+        change_ytd = round((as_close / ytd_base - 1) * 100, 4)
+
+    return change_60d, change_ytd
+
+
+def enrich_snapshot_period_returns(
+    conn,
+    snap: dict[str, Any],
+    *,
+    fetch_if_missing: bool = True,
+) -> None:
+    """Fill 60d/YTD when stock_daily (Sina spot) left them null."""
+    need_60 = snap.get("change_60d_pct") is None
+    need_ytd = snap.get("change_ytd_pct") is None
+    if not need_60 and not need_ytd:
+        return
+    sym = normalize_stock_code(str(snap.get("code") or ""))
+    as_of = str(snap.get("trade_date") or "")[:10]
+    if not sym or not as_of:
+        return
+
+    series = _load_close_series(conn, sym)
+    if len(series) < 2 and fetch_if_missing:
+        ensure_stock_price_daily(conn, sym, force=False)
+        series = _load_close_series(conn, sym)
+
+    change_60d, change_ytd = compute_period_returns(series, as_of)
+    if need_60 and change_60d is not None:
+        snap["change_60d_pct"] = change_60d
+    if need_ytd and change_ytd is not None:
+        snap["change_ytd_pct"] = change_ytd
+
+
 def ensure_stock_price_daily(
     conn,
     code: str,

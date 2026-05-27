@@ -33,6 +33,7 @@ from fund_platform.detail import ensure_fresh_detail
 from fund_platform.market_index import align_index_closes_to_dates, query_index_daily_closes
 from fund_platform.nav_history import ensure_nav_history, query_nav_history
 from fund_platform.stock_price_history import (
+    enrich_snapshot_period_returns,
     ensure_stock_price_daily,
     history_row_count,
     normalize_stock_code,
@@ -297,6 +298,7 @@ def api_stock_detail(
     snap = stock_queries.query_stock_snapshot(conn, sym, trade_date=trade_date)
     if not snap:
         raise HTTPException(status_code=404, detail="no snapshot for stock on trade date")
+    enrich_snapshot_period_returns(conn, snap)
     td = trade_date or snap.get("trade_date") or stock_queries.latest_stock_daily_date(conn)
     industries = stock_queries.query_stock_industries(conn, sym, trade_date=td)
     return {"snapshot": snap, "industries": industries, "trade_date": td}
