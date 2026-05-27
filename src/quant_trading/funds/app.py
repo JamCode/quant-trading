@@ -34,6 +34,7 @@ from fund_platform.market_index import align_index_closes_to_dates, query_index_
 from fund_platform.nav_history import ensure_nav_history, query_nav_history
 from fund_platform.stock_price_history import (
     ensure_stock_price_daily,
+    history_row_count,
     normalize_stock_code,
     query_stock_price_daily,
 )
@@ -337,6 +338,27 @@ def api_stock_price_history(
             )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Stock price history fetch failed for %s", sym)
+        if history_row_count(conn, sym) > 0:
+            _, total = query_stock_price_daily(conn, sym, limit=1, offset=0, order="desc")
+            if ord_norm == "asc" and offset == 0:
+                items_desc, _ = query_stock_price_daily(
+                    conn, sym, limit=limit, offset=0, order="desc"
+                )
+                items = list(reversed(items_desc))
+            else:
+                items, _ = query_stock_price_daily(
+                    conn, sym, limit=limit, offset=offset, order=ord_norm
+                )
+            return {
+                "code": sym,
+                "source": "cache",
+                "total": total,
+                "warning": str(exc),
+                "limit": limit,
+                "offset": offset,
+                "order": ord_norm,
+                "items": items,
+            }
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {
         **meta,

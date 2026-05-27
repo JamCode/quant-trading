@@ -1,9 +1,10 @@
-"""Lazy-loaded per-stock daily K-line (AkShare EM qfq → MySQL cache)."""
+"""Lazy-loaded per-stock daily K-line (Sina primary on ECS; East Money optional)."""
 
 from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
@@ -18,6 +19,14 @@ _CODE_RE = re.compile(r"^\d{6}$")
 def normalize_stock_code(code: str) -> Optional[str]:
     sym = code.strip()
     return sym if _CODE_RE.fullmatch(sym) else None
+
+
+def stock_code_to_sina_symbol(code: str) -> str:
+    """Map 6-digit A-share code to Sina symbol (sh/sz prefix)."""
+    c = code.strip().zfill(6)
+    if c.startswith(("60", "68", "90", "91")):
+        return f"sh{c}"
+    return f"sz{c}"
 
 
 def _cursor(conn):
@@ -46,6 +55,12 @@ def _int_or_none(value: Any) -> Optional[int]:
         return None
 
 
+def _trade_date_str(value: Any) -> str:
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value).strip()[:10]
+
+
 def history_row_count(conn, code: str) -> int:
     sym = normalize_stock_code(code)
     if not sym:
@@ -58,18 +73,10 @@ def history_row_count(conn, code: str) -> int:
     return int(cur.fetchone()["c"])
 
 
-def fetch_stock_price_daily_em(code: str) -> list[dict[str, Any]]:
-    import akshare as ak
-
-    sym = normalize_stock_code(code)
-    if not sym:
-        return []
-    df = ak.stock_zh_a_hist(symbol=sym, period="daily", adjust="qfq")
-    if df is None or df.empty:
-        return []
+def _rows_from_em_df(df) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for rec in df.to_dict("records"):
-        d = str(rec.get("日期", "")).strip()[:10]
+        d = _trade_date_str(rec.get("日期", ""))
         if not d:
             continue
         rows.append(
@@ -85,6 +92,98 @@ def fetch_stock_price_daily_em(code: str) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def _rows_from_sina_df(df) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    prev_close: Optional[float] = None
+    for rec in df.to_dict("records"):
+        d = _trade_date_str(rec.get("date", ""))
+        if not d:
+            continue
+        close = _num(rec.get("close"))
+        change_pct = _num(rec.get("change_pct"))
+        if change_pct is None and prev_close and close:
+            change_pct = round((close - prev_close) / prev_close * 100, 4)
+        rows.append(
+            {
+                "trade_date": d,
+                "open": _num(rec.get("open")),
+                "high": _num(rec.get("high")),
+                "low": _num(rec.get("low")),
+                "close": close,
+                "volume": _int_or_none(rec.get("volume")),
+                "amount": _num(rec.get("amount")),
+                "change_pct": change_pct,
+            }
+        )
+        if close is not None:
+            prev_close = close
+    return rows
+
+
+def fetch_stock_price_daily_em(code: str) -> list[dict[str, Any]]:
+    import akshare as ak
+
+    sym = normalize_stock_code(code)
+    if not sym:
+        return []
+    df = ak.stock_zh_a_hist(symbol=sym, period="daily", adjust="qfq")
+    if df is None or df.empty:
+        return []
+    return _rows_from_em_df(df)
+
+
+def fetch_stock_price_daily_sina(code: str) -> list[dict[str, Any]]:
+    import akshare as ak
+
+    sym = normalize_stock_code(code)
+    if not sym:
+        return []
+    sina_sym = stock_code_to_sina_symbol(sym)
+    df = ak.stock_zh_a_daily(symbol=sina_sym)
+    if df is None or df.empty:
+        return []
+    return _rows_from_sina_df(df)
+
+
+def fetch_stock_price_daily(code: str) -> tuple[list[dict[str, Any]], str]:
+    """East Money (qfq) when reachable; Sina daily as fallback (works on ECS)."""
+    sym = normalize_stock_code(code)
+    if not sym:
+        return [], "invalid"
+
+    last_em: Optional[Exception] = None
+    for attempt in range(2):
+        try:
+            rows = fetch_stock_price_daily_em(sym)
+            if rows:
+                return rows, "eastmoney"
+        except Exception as exc:  # noqa: BLE001
+            last_em = exc
+            logger.warning("EM stock hist %s attempt %s: %s", sym, attempt + 1, exc)
+            if attempt == 0:
+                time.sleep(1.5)
+
+    last_sina: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            rows = fetch_stock_price_daily_sina(sym)
+            if rows:
+                return rows, "sina"
+        except Exception as exc:  # noqa: BLE001
+            last_sina = exc
+            logger.warning("Sina stock hist %s attempt %s: %s", sym, attempt + 1, exc)
+            if attempt < 2:
+                time.sleep(2.0)
+
+    if last_sina:
+        raise RuntimeError(
+            f"stock history fetch failed for {sym}: sina={last_sina}; em={last_em}"
+        ) from last_sina
+    if last_em:
+        raise RuntimeError(f"stock history empty for {sym}: em={last_em}") from last_em
+    return [], "empty"
 
 
 def replace_stock_price_daily(conn, code: str, rows: list[dict[str, Any]]) -> int:
@@ -183,7 +282,7 @@ def ensure_stock_price_daily(
     source = "cache"
     if cached == 0 or force:
         logger.info("Fetching stock price history for %s (force=%s)", sym, force)
-        rows = fetch_stock_price_daily_em(sym)
+        rows, fetch_source = fetch_stock_price_daily(sym)
         if not rows:
             return {
                 "code": sym,
@@ -192,7 +291,7 @@ def ensure_stock_price_daily(
                 "fetched_at": _utc_now(),
             }
         replace_stock_price_daily(conn, sym, rows)
-        source = "akshare"
+        source = fetch_source
         cached = len(rows)
     return {
         "code": sym,

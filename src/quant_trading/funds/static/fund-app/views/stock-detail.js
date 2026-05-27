@@ -44,7 +44,7 @@ function renderPriceChart(points) {
       labels,
       datasets: [
         {
-          label: "收盘价(前复权)",
+          label: "收盘价",
           data: points.map((p) => p.close),
           borderColor: "#4da3ff",
           tension: 0.1,
@@ -99,7 +99,7 @@ export async function mountStockDetail(code, query) {
       ${chips ? `<p class="meta">所属行业</p><div class="chip-row">${chips}</div>` : ""}
       <section class="panel">
         <div class="toolbar">
-          <strong>日 K（前复权）</strong>
+          <strong>日 K</strong>
           <button type="button" id="stock-refresh-history">刷新历史</button>
         </div>
         <p class="meta" id="stock-chart-meta">加载图表…</p>
@@ -134,7 +134,16 @@ export async function mountStockDetail(code, query) {
         });
         const items = hist.items || [];
         if (metaEl) {
-          const src = hist.source === "cache" ? "MySQL 缓存" : hist.source || "";
+          const srcMap = {
+            cache: "MySQL 缓存",
+            sina: "新浪（ECS 可用）",
+            eastmoney: "东财前复权",
+            empty: "无数据",
+          };
+          let src = srcMap[hist.source] || hist.source || "";
+          if (hist.warning) {
+            src += ` · 刷新失败已用缓存`;
+          }
           metaEl.textContent =
             items.length > 0
               ? `共 ${hist.total ?? items.length} 条 · 展示 ${items.length} 条 · ${src}`
@@ -146,7 +155,8 @@ export async function mountStockDetail(code, query) {
         }
       } catch (err) {
         if (metaEl) {
-          metaEl.textContent = `图表加载失败：${err.message || "未知错误"}`;
+          const detail = err.body?.detail;
+          metaEl.textContent = `图表加载失败：${detail || err.message || "未知错误"}`;
         }
       }
     };
