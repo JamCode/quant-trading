@@ -182,6 +182,18 @@ python -c "from fund_platform.market_index import backfill_market_index_daily; i
 
 验证：`SELECT code, COUNT(*) c, MIN(trade_date), MAX(trade_date) FROM market_index_daily GROUP BY code;`
 
+**A 股指数全历史 + 成交额（一次性，限速防封）** — 先新浪 OHLCV、再东财成交额，支持断点续跑：
+
+```bash
+set -a && source deploy/ecs/fund-stack.env && set +a
+python examples/backfill_cn_index_full_history.py --dry-run   # 仅看能拉多少条
+python examples/backfill_cn_index_full_history.py             # 正式写入（约 15–25 分钟）
+# 失败续跑：默认读 examples/.cn_index_full_backfill_state.json
+python examples/backfill_cn_index_full_history.py --phase amount --codes 000001,399006
+```
+
+可调：`--gap-sina 8 --gap-em 25 --jitter 4 --gap-between-phases 120 --em-attempts 6`
+
 ## Nginx 反代（可选）
 
 将 `deploy/ecs/nginx-location-snippet.conf` 合并进现有站点配置（例如吉他项目的 `guitar-server.conf`），对外路径可按域名调整；改完后 **`nginx -t && reload`**。

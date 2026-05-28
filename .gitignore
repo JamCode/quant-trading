@@ -19,6 +19,9 @@ htmlcov/
 # Crawler runtime logs
 logs/
 
+# One-off backfill checkpoints
+examples/.cn_index_full_backfill_state.json
+
 # Data & secrets (never commit real keys)
 .env
 deploy/ecs/cloud-assistant.env
