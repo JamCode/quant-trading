@@ -785,7 +785,7 @@ def fetch_cn_index_daily_history_em(code: str, name: str) -> list[dict[str, Any]
         last_exc = exc
 
     if last_exc:
-        raise last_exc
+        logger.warning("cn index %s EM history unavailable: %s", code, last_exc)
     return []
 
 
@@ -1254,12 +1254,21 @@ def _patch_daily_amount_batch(rows: list[dict[str, Any]], *, chunk: int = 400) -
         raw.close()
 
 
-def backfill_cn_index_daily_amount(*, days: Optional[int] = None) -> dict[str, Any]:
+def backfill_cn_index_daily_amount(
+    *,
+    days: Optional[int] = None,
+    only_codes: Optional[list[str]] = None,
+) -> dict[str, Any]:
     """Backfill A-share index 成交额 from East Money onto existing daily rows."""
     day_limit = fp_settings.market_index_backfill_days() if days is None else max(0, days)
     start: Optional[date] = None
     if day_limit > 0:
         start = _now_cn().date() - timedelta(days=day_limit)
+
+    want = {c.strip().zfill(6) for c in only_codes} if only_codes else None
+    indices = [
+        (code, name) for code, name in cn_watchlist() if not want or code.zfill(6) in want
+    ]
 
     summary: dict[str, Any] = {
         "ok": True,
@@ -1269,31 +1278,52 @@ def backfill_cn_index_daily_amount(*, days: Optional[int] = None) -> dict[str, A
         "errors": [],
     }
     total_patched = 0
-    delay = max(1.0, fp_settings.market_index_request_delay_sec())
-    for code, name in cn_watchlist():
-        key = code
-        try:
-            em_rows = fetch_cn_index_daily_history_em(code, name)
-            em_rows = _filter_since(em_rows, start)
-            with_amt = len(em_rows)
-            n = _patch_daily_amount_batch(em_rows)
-            total_patched += n
+    delay = max(2.0, fp_settings.market_index_request_delay_sec() * 2)
+    for code, name in indices:
+        key = code.zfill(6)
+        patched = 0
+        em_days = 0
+        last_err: Optional[str] = None
+        for attempt in range(5):
+            try:
+                em_rows = fetch_cn_index_daily_history_em(code, name)
+                if not em_rows:
+                    last_err = "no EM rows"
+                    time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
+                    continue
+                em_rows = _filter_since(em_rows, start)
+                em_days = len(em_rows)
+                patched = _patch_daily_amount_batch(em_rows)
+                if patched > 0:
+                    break
+                last_err = "no rows updated"
+            except Exception as exc:  # noqa: BLE001
+                last_err = str(exc)
+                logger.warning(
+                    "cn index amount backfill %s attempt %s: %s",
+                    key,
+                    attempt + 1,
+                    exc,
+                )
+            time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
+        if patched > 0:
+            total_patched += patched
             summary["cn"][key] = {
-                "em_days": with_amt,
-                "rows_updated": n,
+                "em_days": em_days,
+                "rows_updated": patched,
                 "name": name,
             }
             logger.info(
                 "cn index amount backfill %s em_days=%s rows_updated=%s",
                 key,
-                with_amt,
-                n,
+                em_days,
+                patched,
             )
-            time.sleep(delay)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("cn index amount backfill %s failed", key)
-            summary["errors"].append({"scope": "cn", "code": key, "error": str(exc)})
+        else:
+            summary["errors"].append({"scope": "cn", "code": key, "error": last_err or "unknown"})
             summary["ok"] = False
+            logger.error("cn index amount backfill %s failed: %s", key, last_err)
+        time.sleep(delay)
     summary["rows_updated"] = total_patched
     return summary
 
