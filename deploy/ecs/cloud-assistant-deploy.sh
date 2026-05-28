@@ -16,6 +16,8 @@ cloud_assistant_require_cli
 cloud_assistant_resolve_instance_id
 cloud_assistant_check_agent
 
+GIT_FETCH_PRIMARY="${GIT_FETCH_URL:-}"
+
 read -r -d '' REMOTE_SCRIPT <<EOF || true
 #!/bin/bash
 set -euo pipefail
@@ -26,8 +28,27 @@ runuser -l wanghan -c '
     echo "missing git repo at ${ECS_REPO_PATH}; run cloud-assistant-bootstrap-git.sh first" >&2
     exit 1
   fi
-  git fetch origin ${ECS_GIT_BRANCH}
-  git reset --hard origin/${ECS_GIT_BRANCH}
+  BR="${ECS_GIT_BRANCH}"
+  ok=0
+  for url in \
+    "${GIT_FETCH_PRIMARY}" \
+    "https://ghfast.top/https://github.com/JamCode/quant-trading.git" \
+    "https://mirror.ghproxy.com/https://github.com/JamCode/quant-trading.git" \
+    "https://github.com/JamCode/quant-trading.git"
+  do
+    [[ -n "\$url" ]] || continue
+    echo "git fetch via \$url"
+    git remote set-url origin "\$url"
+    if timeout 120 git fetch origin "\$BR"; then
+      ok=1
+      break
+    fi
+  done
+  if [[ "\$ok" -ne 1 ]]; then
+    echo "git fetch failed (ECS may not reach GitHub); set GIT_FETCH_URL in cloud-assistant.env" >&2
+    exit 1
+  fi
+  git reset --hard "origin/\${BR}"
   source ~/miniconda3/etc/profile.d/conda.sh
   conda activate quant
   pip install -q -U pip setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple
