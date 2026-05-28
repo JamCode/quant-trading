@@ -749,6 +749,41 @@ def fetch_cn_index_daily_history_em(code: str, name: str) -> list[dict[str, Any]
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
         time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
+
+    try:
+        import akshare as ak
+
+        df = ak.stock_zh_index_daily_em(symbol=code_to_em_symbol(code))
+        if df is not None and not df.empty:
+            rows = []
+            for rec in df.to_dict("records"):
+                td = _parse_trade_date(rec.get("date"))
+                if not td:
+                    continue
+                rows.append(
+                    {
+                        "trade_date": td,
+                        "code": c,
+                        "name": name,
+                        "open_px": _opt_float(rec.get("open")),
+                        "close_px": _opt_float(rec.get("close")),
+                        "high_px": _opt_float(rec.get("high")),
+                        "low_px": _opt_float(rec.get("low")),
+                        "volume": _opt_int(rec.get("volume")),
+                        "amount": _opt_float(rec.get("amount")),
+                        "prev_close": None,
+                        "change_pct": None,
+                        "change_amt": None,
+                    }
+                )
+            if rows:
+                delay = fp_settings.market_index_request_delay_sec()
+                if delay > 0:
+                    time.sleep(delay)
+                return _attach_daily_returns(rows)
+    except Exception as exc:  # noqa: BLE001
+        last_exc = exc
+
     if last_exc:
         raise last_exc
     return []
@@ -1181,6 +1216,44 @@ def fetch_global_index_daily_history(
     return fetch_global_index_daily_history_sina(em_name, min_date=min_date)
 
 
+def _patch_daily_amount_batch(rows: list[dict[str, Any]], *, chunk: int = 400) -> int:
+    """Update only ``amount`` on existing ``market_index_daily`` rows."""
+    patch = [
+        r
+        for r in rows
+        if r.get("trade_date") and r.get("code") and r.get("amount") is not None
+    ]
+    if not patch:
+        return 0
+    engine = get_engine()
+    raw = engine.raw_connection()
+    cur = raw.cursor()
+    now = _utc_now_iso()
+    sql = """
+        UPDATE market_index_daily
+        SET amount = %s, updated_at = %s
+        WHERE trade_date = %s AND code = %s
+    """
+    updated = 0
+    try:
+        for i in range(0, len(patch), chunk):
+            part = patch[i : i + chunk]
+            params = [
+                (r["amount"], now, r["trade_date"], r["code"])
+                for r in part
+            ]
+            cur.executemany(sql, params)
+            updated += cur.rowcount
+        raw.commit()
+        return updated
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+        raw.close()
+
+
 def backfill_cn_index_daily_amount(*, days: Optional[int] = None) -> dict[str, Any]:
     """Backfill A-share index 成交额 from East Money onto existing daily rows."""
     day_limit = fp_settings.market_index_backfill_days() if days is None else max(0, days)
@@ -1195,27 +1268,33 @@ def backfill_cn_index_daily_amount(*, days: Optional[int] = None) -> dict[str, A
         "cn": {},
         "errors": [],
     }
-    total_written = 0
+    total_patched = 0
+    delay = max(1.0, fp_settings.market_index_request_delay_sec())
     for code, name in cn_watchlist():
         key = code
         try:
-            rows = fetch_cn_index_daily_history(code, name)
-            rows = _filter_since(rows, start)
-            with_amt = sum(1 for r in rows if r.get("amount") is not None)
-            n = _upsert_daily_batch(rows)
-            total_written += n
-            summary["cn"][key] = {"rows": n, "with_amount": with_amt, "name": name}
+            em_rows = fetch_cn_index_daily_history_em(code, name)
+            em_rows = _filter_since(em_rows, start)
+            with_amt = len(em_rows)
+            n = _patch_daily_amount_batch(em_rows)
+            total_patched += n
+            summary["cn"][key] = {
+                "em_days": with_amt,
+                "rows_updated": n,
+                "name": name,
+            }
             logger.info(
-                "cn index amount backfill %s rows=%s with_amount=%s",
+                "cn index amount backfill %s em_days=%s rows_updated=%s",
                 key,
-                n,
                 with_amt,
+                n,
             )
+            time.sleep(delay)
         except Exception as exc:  # noqa: BLE001
             logger.exception("cn index amount backfill %s failed", key)
             summary["errors"].append({"scope": "cn", "code": key, "error": str(exc)})
             summary["ok"] = False
-    summary["written"] = total_written
+    summary["rows_updated"] = total_patched
     return summary
 
 
