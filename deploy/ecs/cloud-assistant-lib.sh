@@ -9,6 +9,7 @@ _cloud_assistant_die() {
 }
 
 cloud_assistant_load_env() {
+  local _timeout_cli="${ECS_COMMAND_TIMEOUT:-}"
   if [[ -f "${_CLOUD_ASSISTANT_DIR}/cloud-assistant.env" ]]; then
     # shellcheck disable=SC1091
     set -a
@@ -17,7 +18,11 @@ cloud_assistant_load_env() {
   fi
   ECS_REGION_ID="${ECS_REGION_ID:-cn-hangzhou}"
   ECS_PUBLIC_IP="${ECS_PUBLIC_IP:-47.110.78.65}"
-  ECS_COMMAND_TIMEOUT="${ECS_COMMAND_TIMEOUT:-300}"
+  if [[ -n "${_timeout_cli}" ]]; then
+    ECS_COMMAND_TIMEOUT="${_timeout_cli}"
+  else
+    ECS_COMMAND_TIMEOUT="${ECS_COMMAND_TIMEOUT:-300}"
+  fi
   ECS_REPO_PATH="${ECS_REPO_PATH:-/home/wanghan/quant-trading}"
   ECS_GIT_BRANCH="${ECS_GIT_BRANCH:-main}"
 }
