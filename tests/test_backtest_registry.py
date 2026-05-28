@@ -5,6 +5,7 @@ def test_list_strategies_includes_sma():
     items = list_strategies_for_api()
     ids = [s["id"] for s in items]
     assert "sma_crossover" in ids
+    assert "volume_surge" in ids
 
 
 def test_get_strategy_entry_unknown():

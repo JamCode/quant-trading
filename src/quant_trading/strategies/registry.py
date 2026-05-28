@@ -5,6 +5,7 @@ from typing import Any, Callable, Literal
 
 from quant_trading.strategies.base import Strategy
 from quant_trading.strategies.sma_crossover import SMACrossoverStrategy
+from quant_trading.strategies.volume_surge import VolumeSurgeStrategy
 
 ParamType = Literal["int", "float"]
 
@@ -70,6 +71,31 @@ _REGISTRY: tuple[StrategyEntry, ...] = (
         params=(
             ParamSpec("fast", "int", default=10, min=2, max=120, label="快线"),
             ParamSpec("slow", "int", default=40, min=5, max=250, label="慢线"),
+        ),
+    ),
+    StrategyEntry(
+        id="volume_surge",
+        name="量能突破",
+        description="成交量高于均量×倍数且当日收涨做多；trend_ma=0 关闭趋势过滤",
+        factory=VolumeSurgeStrategy,
+        params=(
+            ParamSpec("vol_ma", "int", default=20, min=5, max=120, label="均量窗口"),
+            ParamSpec(
+                "vol_ratio",
+                "float",
+                default=1.2,
+                min=1.0,
+                max=5.0,
+                label="放量倍数",
+            ),
+            ParamSpec(
+                "trend_ma",
+                "int",
+                default=60,
+                min=0,
+                max=250,
+                label="趋势均线(0=关)",
+            ),
         ),
     ),
 )
