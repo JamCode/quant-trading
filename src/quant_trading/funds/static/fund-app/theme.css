@@ -536,6 +536,61 @@ code {
   min-height: 280px;
 }
 
+.chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.chart-toolbar-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.chart-toolbar-label {
+  margin: 0;
+  margin-right: 0.25rem;
+}
+
+.chart-toolbar button {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--row-alt);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chart-toolbar button:hover {
+  border-color: var(--accent);
+}
+
+.chart-toolbar button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.chart-toolbar-meta {
+  margin: 0;
+}
+
+.market-kline-wrap {
+  min-height: 420px;
+  height: 420px;
+}
+
+.market-kline-chart {
+  width: 100%;
+  height: 100%;
+}
+
 .view-heading {
   margin: 0.5rem 0;
   font-size: 1.25rem;

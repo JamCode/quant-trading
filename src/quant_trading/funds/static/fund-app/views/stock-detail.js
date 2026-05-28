@@ -1,9 +1,10 @@
 import { apiGet, escapeHtml, fmtPct, fmtYi, pctClassNum } from "../api.js";
 import { navigate } from "../router.js";
+import { klineChartShell, mountMarketKlineChart } from "../components/market-kline-chart.js";
 
 const main = () => document.getElementById("app-main");
 
-let priceChart = null;
+let chartHandle = null;
 
 function fmtNum(value, digits = 2) {
   if (value === null || value === undefined || value === "") {
@@ -14,46 +15,6 @@ function fmtNum(value, digits = 2) {
     return "—";
   }
   return n.toFixed(digits);
-}
-
-async function loadChartJs() {
-  if (window.Chart) {
-    return;
-  }
-  await new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js";
-    s.onload = resolve;
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-
-function renderPriceChart(points) {
-  const canvas = document.getElementById("stockPriceChart");
-  if (!canvas || !window.Chart) {
-    return;
-  }
-  if (priceChart) {
-    priceChart.destroy();
-  }
-  const labels = points.map((p) => p.trade_date);
-  priceChart = new window.Chart(canvas, {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: "收盘价",
-          data: points.map((p) => p.close),
-          borderColor: "#4da3ff",
-          tension: 0.1,
-          pointRadius: 0,
-        },
-      ],
-    },
-    options: { responsive: true, maintainAspectRatio: false },
-  });
 }
 
 function snapshotGrid(snap) {
@@ -74,8 +35,27 @@ function snapshotGrid(snap) {
     .join("")}</dl>`;
 }
 
+function normalizeHistoryItems(items) {
+  return (items || [])
+    .filter((p) => p.close != null)
+    .map((p) => ({
+      trade_date: p.trade_date,
+      open: p.open ?? p.close,
+      high: p.high ?? p.close,
+      low: p.low ?? p.close,
+      close: p.close,
+      change_pct: p.change_pct,
+      volume: p.volume,
+      amount: p.amount,
+    }));
+}
+
 export async function mountStockDetail(code, query) {
   const host = main();
+  if (chartHandle) {
+    chartHandle.dispose();
+    chartHandle = null;
+  }
   host.innerHTML = '<p class="loading">加载中…</p>';
   try {
     const detail = await apiGet(`/stocks/${encodeURIComponent(code)}`, {
@@ -102,8 +82,8 @@ export async function mountStockDetail(code, query) {
           <strong>日 K</strong>
           <button type="button" id="stock-refresh-history">刷新历史</button>
         </div>
-        <p class="meta" id="stock-chart-meta">加载图表…</p>
-        <div class="chart-wrap" style="height:320px"><canvas id="stockPriceChart"></canvas></div>
+        <p class="meta" id="stock-chart-meta">加载 K 线…</p>
+        <div id="stock-kline-host"></div>
       </section>`;
 
     host.querySelector("#stocks-back")?.addEventListener("click", (event) => {
@@ -121,18 +101,24 @@ export async function mountStockDetail(code, query) {
       });
     });
 
+    const klineHost = host.querySelector("#stock-kline-host");
+
     const loadHistory = async (refresh = false) => {
       const metaEl = host.querySelector("#stock-chart-meta");
       if (metaEl) {
-        metaEl.textContent = "加载图表…";
+        metaEl.textContent = "加载 K 线…";
+      }
+      if (chartHandle) {
+        chartHandle.dispose();
+        chartHandle = null;
       }
       try {
         const hist = await apiGet(`/stocks/${encodeURIComponent(code)}/price-history`, {
-          limit: 250,
+          limit: 500,
           order: "asc",
           refresh: refresh ? 1 : 0,
         });
-        const items = hist.items || [];
+        const items = normalizeHistoryItems(hist.items);
         if (metaEl) {
           const srcMap = {
             cache: "MySQL 缓存",
@@ -146,12 +132,18 @@ export async function mountStockDetail(code, query) {
           }
           metaEl.textContent =
             items.length > 0
-              ? `共 ${hist.total ?? items.length} 条 · 展示 ${items.length} 条 · ${src}`
+              ? `共 ${hist.total ?? items.length} 条 · 已加载 ${items.length} 条 · ${src}`
               : "暂无历史数据，可点「刷新历史」重试";
         }
-        if (items.length) {
-          await loadChartJs();
-          renderPriceChart(items);
+        if (items.length && klineHost) {
+          klineHost.innerHTML = klineChartShell("拖动滑块缩放 · 副图为成交额");
+          chartHandle = await mountMarketKlineChart({
+            host: klineHost,
+            points: items,
+            name: `${name} 日K`,
+          });
+        } else if (klineHost) {
+          klineHost.innerHTML = '<p class="meta">暂无 K 线数据</p>';
         }
       } catch (err) {
         if (metaEl) {

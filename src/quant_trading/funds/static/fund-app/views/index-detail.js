@@ -1,9 +1,10 @@
 import { apiGet, escapeHtml, fmtPct, pctClassNum } from "../api.js";
 import { navigate } from "../router.js";
+import { klineChartShell, mountMarketKlineChart } from "../components/market-kline-chart.js";
 
 const main = () => document.getElementById("app-main");
 
-let priceChart = null;
+let chartHandle = null;
 
 function fmtNum(value, digits = 2) {
   if (value === null || value === undefined || value === "") {
@@ -16,43 +17,21 @@ function fmtNum(value, digits = 2) {
   return n.toFixed(digits);
 }
 
-async function loadChartJs() {
-  if (window.Chart) {
-    return;
+function fmtAmount(value) {
+  if (value === null || value === undefined || value === "") {
+    return "—";
   }
-  await new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js";
-    s.onload = resolve;
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-
-function renderChart(points, name) {
-  const canvas = document.getElementById("indexPriceChart");
-  if (!canvas || !window.Chart) {
-    return;
+  const n = Number(value);
+  if (Number.isNaN(n)) {
+    return "—";
   }
-  if (priceChart) {
-    priceChart.destroy();
+  if (Math.abs(n) >= 1e8) {
+    return `${(n / 1e8).toFixed(2)}亿`;
   }
-  priceChart = new window.Chart(canvas, {
-    type: "line",
-    data: {
-      labels: points.map((p) => p.trade_date),
-      datasets: [
-        {
-          label: `${name} 收盘`,
-          data: points.map((p) => p.close),
-          borderColor: "#4da3ff",
-          tension: 0.1,
-          pointRadius: 0,
-        },
-      ],
-    },
-    options: { responsive: true, maintainAspectRatio: false },
-  });
+  if (Math.abs(n) >= 1e4) {
+    return `${(n / 1e4).toFixed(2)}万`;
+  }
+  return n.toFixed(0);
 }
 
 function snapshotGrid(snap) {
@@ -64,14 +43,34 @@ function snapshotGrid(snap) {
     ["最低", fmtNum(snap.low_px)],
     ["昨收", fmtNum(snap.prev_close)],
     ["涨跌额", fmtNum(snap.change_amt)],
+    ["成交额", fmtAmount(snap.amount)],
   ];
   return `<dl class="detail-dl">${fields
     .map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`)
     .join("")}</dl>`;
 }
 
+function normalizeHistoryItems(items) {
+  return (items || [])
+    .filter((p) => p.close != null)
+    .map((p) => ({
+      trade_date: p.trade_date,
+      open: p.open ?? p.close,
+      high: p.high ?? p.close,
+      low: p.low ?? p.close,
+      close: p.close,
+      change_pct: p.change_pct,
+      volume: p.volume,
+      amount: p.amount,
+    }));
+}
+
 export async function mountIndexDetail(code) {
   const host = main();
+  if (chartHandle) {
+    chartHandle.dispose();
+    chartHandle = null;
+  }
   host.innerHTML = '<p class="loading">加载中…</p>';
   try {
     const detail = await apiGet(`/market-indices/${encodeURIComponent(code)}`);
@@ -83,9 +82,9 @@ export async function mountIndexDetail(code) {
       <h2 class="view-heading">${escapeHtml(name)} <code>${escapeHtml(code)}</code></h2>
       <p class="meta">快照数据日 ${escapeHtml(td)}</p>
       ${snapshotGrid(snap)}
-      <section class="panel">
-        <p class="meta" id="index-chart-meta">加载走势…</p>
-        <div class="chart-wrap" style="height:320px"><canvas id="indexPriceChart"></canvas></div>
+      <section class="panel" id="index-kline-panel">
+        <p class="meta" id="index-chart-meta">加载 K 线…</p>
+        <div id="index-kline-host"></div>
       </section>`;
 
     host.querySelector("#indices-back")?.addEventListener("click", (event) => {
@@ -95,21 +94,28 @@ export async function mountIndexDetail(code) {
     });
 
     const metaEl = host.querySelector("#index-chart-meta");
+    const klineHost = host.querySelector("#index-kline-host");
     try {
       const hist = await apiGet(`/market-indices/${encodeURIComponent(code)}/history`, {
-        limit: 250,
+        limit: 500,
         order: "asc",
       });
-      const items = (hist.items || []).filter((p) => p.close != null);
+      const items = normalizeHistoryItems(hist.items);
       if (metaEl) {
         metaEl.textContent =
           items.length > 0
-            ? `共 ${hist.total ?? items.length} 个交易日 · 展示 ${items.length} 条`
-            : "暂无历史收盘";
+            ? `共 ${hist.total ?? items.length} 个交易日 · 已加载 ${items.length} 条`
+            : "暂无历史行情";
       }
-      if (items.length) {
-        await loadChartJs();
-        renderChart(items, name);
+      if (items.length && klineHost) {
+        klineHost.innerHTML = klineChartShell("拖动下方滑块缩放 · 副图为成交额（无则显示成交量）");
+        chartHandle = await mountMarketKlineChart({
+          host: klineHost,
+          points: items,
+          name,
+        });
+      } else if (klineHost) {
+        klineHost.innerHTML = '<p class="meta">暂无 K 线数据</p>';
       }
     } catch (err) {
       if (metaEl) {
@@ -122,7 +128,7 @@ export async function mountIndexDetail(code) {
       <p><a href="#" id="indices-back-err">← 返回列表</a></p>`;
     host.querySelector("#indices-back-err")?.addEventListener("click", (event) => {
       event.preventDefault();
-      navigate("/indices", { query: {} });
+      navigate("/indices");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
   }
