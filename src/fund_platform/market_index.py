@@ -94,6 +94,25 @@ def code_to_sina_symbol(code: str) -> str:
     return f"sh{c}"
 
 
+def code_to_em_symbol(code: str) -> str:
+    """East Money daily K-line symbol prefix (sh000300 / sz399001)."""
+    return code_to_sina_symbol(code)
+
+
+_EM_CN_KLINE_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://quote.eastmoney.com/center/hszs.html",
+}
+
+_EM_CN_KLINE_URLS = (
+    "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+    "https://48.push2his.eastmoney.com/api/qt/stock/kline/get",
+)
+
+
 def is_cn_equity_trading_session(now: Optional[datetime] = None) -> bool:
     """Mon–Fri 09:30–11:30, 13:00–15:00 Asia/Shanghai."""
     t = now or _now_cn()
@@ -429,7 +448,7 @@ def _upsert_daily_batch(rows: list[dict[str, Any]], *, chunk: int = 400) -> int:
           low_px=VALUES(low_px), close_px=VALUES(close_px),
           prev_close=VALUES(prev_close), change_pct=VALUES(change_pct),
           change_amt=VALUES(change_amt), volume=VALUES(volume),
-          amount=VALUES(amount), updated_at=VALUES(updated_at)
+          amount=COALESCE(VALUES(amount), amount), updated_at=VALUES(updated_at)
     """
     written = 0
     try:
@@ -483,7 +502,7 @@ def _upsert_daily_rows(rows: list[dict[str, Any]], trade_date: str) -> None:
                   low_px=VALUES(low_px), close_px=VALUES(close_px),
                   prev_close=VALUES(prev_close), change_pct=VALUES(change_pct),
                   change_amt=VALUES(change_amt), volume=VALUES(volume),
-                  amount=VALUES(amount), updated_at=VALUES(updated_at)
+                  amount=COALESCE(VALUES(amount), amount), updated_at=VALUES(updated_at)
                 """,
                 (
                     trade_date,
@@ -642,8 +661,101 @@ def _filter_since(rows: list[dict[str, Any]], start: Optional[date]) -> list[dic
     return [r for r in rows if str(r.get("trade_date", "")) >= start_s]
 
 
-def fetch_cn_index_daily_history(code: str, name: str) -> list[dict[str, Any]]:
-    """Sina full daily OHLC for one A-share index code."""
+def _merge_cn_amount_from_em(
+    base_rows: list[dict[str, Any]],
+    em_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Overlay East Money 成交额 onto Sina OHLC rows (matched by trade_date)."""
+    amount_by_date = {
+        str(r["trade_date"]): r.get("amount")
+        for r in em_rows
+        if r.get("trade_date") and r.get("amount") is not None
+    }
+    if not amount_by_date:
+        return base_rows
+    out: list[dict[str, Any]] = []
+    for row in base_rows:
+        merged = dict(row)
+        amt = amount_by_date.get(str(row.get("trade_date", "")))
+        if amt is not None:
+            merged["amount"] = amt
+        out.append(merged)
+    return out
+
+
+def fetch_cn_index_daily_history_em(code: str, name: str) -> list[dict[str, Any]]:
+    """East Money index daily K (成交额); browser headers for ECS."""
+    import requests
+
+    sym = code_to_em_symbol(code)
+    c = code.strip().zfill(6)
+    if sym.startswith("sz"):
+        secid = f"0.{c}"
+    else:
+        secid = f"1.{c}"
+
+    params = {
+        "secid": secid,
+        "fields1": "f1,f2,f3,f4,f5",
+        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
+        "klt": "101",
+        "fqt": "0",
+        "beg": "19900101",
+        "end": "20500101",
+    }
+    last_exc: Optional[Exception] = None
+    for attempt in range(4):
+        for url in _EM_CN_KLINE_URLS:
+            try:
+                r = requests.get(
+                    url,
+                    params=params,
+                    headers=_EM_CN_KLINE_HEADERS,
+                    timeout=30,
+                )
+                r.raise_for_status()
+                klines = (r.json().get("data") or {}).get("klines") or []
+                if not klines:
+                    continue
+                rows: list[dict[str, Any]] = []
+                for line in klines:
+                    parts = str(line).split(",")
+                    if len(parts) < 7:
+                        continue
+                    td = _parse_trade_date(parts[0])
+                    if not td:
+                        continue
+                    rows.append(
+                        {
+                            "trade_date": td,
+                            "code": c,
+                            "name": name,
+                            "open_px": _opt_float(parts[1]),
+                            "close_px": _opt_float(parts[2]),
+                            "high_px": _opt_float(parts[3]),
+                            "low_px": _opt_float(parts[4]),
+                            "volume": _opt_int(parts[5]),
+                            "amount": _opt_float(parts[6]),
+                            "prev_close": None,
+                            "change_pct": None,
+                            "change_amt": None,
+                        }
+                    )
+                if rows:
+                    delay = fp_settings.market_index_request_delay_sec()
+                    if delay > 0:
+                        time.sleep(delay)
+                    return _attach_daily_returns(rows)
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+        time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
+    if last_exc:
+        raise last_exc
+    return []
+
+
+def fetch_cn_index_daily_history_sina(code: str, name: str) -> list[dict[str, Any]]:
+    """Sina full daily OHLCV for one A-share index (no 成交额)."""
     import akshare as ak
 
     sina = code_to_sina_symbol(code)
@@ -694,6 +806,39 @@ def fetch_cn_index_daily_history(code: str, name: str) -> list[dict[str, Any]]:
     if last_exc:
         raise last_exc
     return []
+
+
+def fetch_cn_index_daily_history(code: str, name: str) -> list[dict[str, Any]]:
+    """Sina OHLCV + East Money 成交额 overlay (EM optional on failure)."""
+    rows = fetch_cn_index_daily_history_sina(code, name)
+    if not rows:
+        return rows
+    em_err: Optional[str] = None
+    for attempt in range(3):
+        try:
+            em_rows = fetch_cn_index_daily_history_em(code, name)
+            if em_rows:
+                merged = _merge_cn_amount_from_em(rows, em_rows)
+                with_amt = sum(1 for r in merged if r.get("amount") is not None)
+                logger.info(
+                    "cn index %s amount overlay: %s/%s days from EM",
+                    code,
+                    with_amt,
+                    len(merged),
+                )
+                return merged
+        except Exception as exc:  # noqa: BLE001
+            em_err = str(exc)
+            logger.warning(
+                "cn index %s EM amount fetch attempt %s: %s",
+                code,
+                attempt + 1,
+                exc,
+            )
+            time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
+    if em_err:
+        logger.warning("cn index %s proceeding without EM amount: %s", code, em_err)
+    return rows
 
 
 def _global_em_secid(em_name: str) -> str:
@@ -903,7 +1048,7 @@ def _cn_spot_to_daily_rows(spot_rows: list[dict[str, Any]], trade_date: str) -> 
 
 
 def _fetch_cn_daily_eod(as_of: date) -> tuple[list[dict[str, Any]], list[str]]:
-    """Per-index Sina daily K-line (ECS-stable); East Money spot is not used."""
+    """Per-index Sina OHLCV + East Money 成交额 overlay."""
     td_s = as_of.isoformat()
     errors: list[str] = []
     rows: list[dict[str, Any]] = []
@@ -1034,6 +1179,44 @@ def fetch_global_index_daily_history(
     if rows:
         return rows
     return fetch_global_index_daily_history_sina(em_name, min_date=min_date)
+
+
+def backfill_cn_index_daily_amount(*, days: Optional[int] = None) -> dict[str, Any]:
+    """Backfill A-share index 成交额 from East Money onto existing daily rows."""
+    day_limit = fp_settings.market_index_backfill_days() if days is None else max(0, days)
+    start: Optional[date] = None
+    if day_limit > 0:
+        start = _now_cn().date() - timedelta(days=day_limit)
+
+    summary: dict[str, Any] = {
+        "ok": True,
+        "days": day_limit,
+        "start_date": start.isoformat() if start else None,
+        "cn": {},
+        "errors": [],
+    }
+    total_written = 0
+    for code, name in cn_watchlist():
+        key = code
+        try:
+            rows = fetch_cn_index_daily_history(code, name)
+            rows = _filter_since(rows, start)
+            with_amt = sum(1 for r in rows if r.get("amount") is not None)
+            n = _upsert_daily_batch(rows)
+            total_written += n
+            summary["cn"][key] = {"rows": n, "with_amount": with_amt, "name": name}
+            logger.info(
+                "cn index amount backfill %s rows=%s with_amount=%s",
+                key,
+                n,
+                with_amt,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("cn index amount backfill %s failed", key)
+            summary["errors"].append({"scope": "cn", "code": key, "error": str(exc)})
+            summary["ok"] = False
+    summary["written"] = total_written
+    return summary
 
 
 def backfill_market_index_daily(
