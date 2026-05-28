@@ -136,7 +136,7 @@ export async function mountStockDetail(code, query) {
               : "暂无历史数据，可点「刷新历史」重试";
         }
         if (items.length && klineHost) {
-          klineHost.innerHTML = klineChartShell("拖动滑块缩放 · 副图为成交额");
+          klineHost.innerHTML = klineChartShell("点上方区间切换范围 · 副图为成交额");
           chartHandle = await mountMarketKlineChart({
             host: klineHost,
             points: items,

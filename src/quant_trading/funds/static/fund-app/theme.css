@@ -582,8 +582,8 @@ code {
 }
 
 .market-kline-wrap {
-  min-height: 420px;
-  height: 420px;
+  min-height: 360px;
+  height: 360px;
 }
 
 .market-kline-chart {

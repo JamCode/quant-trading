@@ -83,7 +83,7 @@ export async function mountIndexDetail(code) {
       <p class="meta">快照数据日 ${escapeHtml(td)}</p>
       ${snapshotGrid(snap)}
       <section class="panel" id="index-kline-panel">
-        <p class="meta" id="index-chart-meta">加载 K 线…</p>
+        <p class="meta" id="index-chart-meta">加载走势…</p>
         <div id="index-kline-host"></div>
       </section>`;
 
@@ -108,7 +108,7 @@ export async function mountIndexDetail(code) {
             : "暂无历史行情";
       }
       if (items.length && klineHost) {
-        klineHost.innerHTML = klineChartShell("拖动下方滑块缩放 · 副图为成交额（无则显示成交量）");
+        klineHost.innerHTML = klineChartShell("点上方区间切换范围 · 副图为成交额（无则显示成交量）");
         chartHandle = await mountMarketKlineChart({
           host: klineHost,
           points: items,

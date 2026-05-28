@@ -1,4 +1,4 @@
-/** ECharts K-line + volume/amount sub-chart (A-share colors: up red, down green). */
+/** ECharts line chart + volume/amount sub-chart (A-share colors on volume bars). */
 
 import { fmtYi } from "../api.js";
 
@@ -22,6 +22,7 @@ export function loadEcharts() {
 
 const UP = "#f85149";
 const DOWN = "#3fb950";
+const LINE = "#4da3ff";
 
 function fmtVolAxis(value) {
   const n = Number(value);
@@ -48,22 +49,17 @@ function sliceRange(points, rangeKey) {
 
 function buildOption(points, name) {
   const dates = points.map((p) => p.trade_date);
-  const ohlc = points.map((p) => [
-    p.open ?? p.close,
-    p.close,
-    p.low ?? p.close,
-    p.high ?? p.close,
-  ]);
+  const closes = points.map((p) => p.close);
   const useAmount = points.some((p) => p.amount != null && Number(p.amount) > 0);
   const volLabel = useAmount ? "成交额" : "成交量";
   const volData = points.map((p, i) => {
     const v = useAmount ? p.amount : p.volume;
     const n = Number(v) || 0;
-    const o = ohlc[i][0];
-    const c = ohlc[i][1];
+    const prev = i > 0 ? closes[i - 1] : closes[i];
+    const c = closes[i];
     return {
       value: n,
-      itemStyle: { color: c >= o ? UP : DOWN, opacity: 0.85 },
+      itemStyle: { color: c >= prev ? UP : DOWN, opacity: 0.85 },
     };
   });
 
@@ -77,50 +73,46 @@ function buildOption(points, name) {
     },
     tooltip: {
       trigger: "axis",
-      axisPointer: { type: "cross" },
+      axisPointer: { type: "line" },
       backgroundColor: "rgba(22,27,34,0.95)",
       borderColor: "#30363d",
       textStyle: { color: "#e6edf3", fontSize: 12 },
       formatter(params) {
-        const k = params.find((x) => x.seriesType === "candlestick");
-        if (!k || !k.data) {
+        const line = params.find((x) => x.seriesType === "line");
+        if (!line) {
           return "";
         }
-        const idx = k.dataIndex;
+        const idx = line.dataIndex;
         const p = points[idx];
-        const [open, close, low, high] = k.data;
+        const close = line.data;
         const chg = p.change_pct != null ? `${Number(p.change_pct).toFixed(2)}%` : "—";
         let vol = "—";
         if (useAmount && p.amount != null) {
-          const a = Number(p.amount);
-          vol = Math.abs(a) >= 1e8 ? `${(a / 1e8).toFixed(2)}亿` : fmtVolAxis(a);
+          vol = fmtYi(p.amount);
         } else if (p.volume != null) {
           vol = fmtVolAxis(p.volume);
         }
-        return [
-          `<strong>${p.trade_date}</strong>`,
-          `开 ${open}  高 ${high}`,
-          `低 ${low}  收 ${close}`,
-          `涨跌 ${chg}`,
-          `${volLabel} ${vol}`,
-        ].join("<br/>");
+        const parts = [`<strong>${p.trade_date}</strong>`, `收盘 ${close}`, `涨跌 ${chg}`];
+        if (p.open != null && p.high != null && p.low != null) {
+          parts.splice(1, 0, `开 ${p.open}  高 ${p.high}  低 ${p.low}`);
+        }
+        parts.push(`${volLabel} ${vol}`);
+        return parts.join("<br/>");
       },
     },
     axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
     grid: [
-      { left: 56, right: 16, top: 36, height: "56%" },
-      { left: 56, right: 16, top: "76%", height: "14%" },
+      { left: 56, right: 16, top: 36, height: "58%" },
+      { left: 56, right: 16, top: "78%", height: "14%" },
     ],
     xAxis: [
       {
         type: "category",
         data: dates,
-        boundaryGap: true,
+        boundaryGap: false,
         axisLine: { lineStyle: { color: "#30363d" } },
         axisLabel: { color: "#8b949e", fontSize: 11 },
         splitLine: { show: false },
-        min: "dataMin",
-        max: "dataMax",
       },
       {
         type: "category",
@@ -145,37 +137,31 @@ function buildOption(points, name) {
         axisLabel: {
           color: "#8b949e",
           fontSize: 10,
-          formatter: (v) => (useAmount ? fmtVolAxis(v) : fmtVolAxis(v)),
+          formatter: (v) => fmtVolAxis(v),
         },
         splitLine: { show: false },
-      },
-    ],
-    dataZoom: [
-      { type: "inside", xAxisIndex: [0, 1], start: 60, end: 100 },
-      {
-        show: true,
-        xAxisIndex: [0, 1],
-        type: "slider",
-        bottom: 2,
-        height: 22,
-        start: 60,
-        end: 100,
-        borderColor: "#30363d",
-        fillerColor: "rgba(77,163,255,0.15)",
-        handleStyle: { color: "#4da3ff" },
-        textStyle: { color: "#8b949e" },
       },
     ],
     series: [
       {
         name,
-        type: "candlestick",
-        data: ohlc,
-        itemStyle: {
-          color: UP,
-          color0: DOWN,
-          borderColor: UP,
-          borderColor0: DOWN,
+        type: "line",
+        data: closes,
+        showSymbol: false,
+        smooth: false,
+        lineStyle: { width: 2, color: LINE },
+        areaStyle: {
+          color: {
+            type: "linear",
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: "rgba(77,163,255,0.22)" },
+              { offset: 1, color: "rgba(77,163,255,0.02)" },
+            ],
+          },
         },
       },
       {
@@ -206,7 +192,7 @@ export async function mountMarketKlineChart({ host, points, name }) {
   const echarts = await loadEcharts();
   const chart = echarts.init(el, null, { renderer: "canvas" });
   let currentRange = "1y";
-  let allPoints = points;
+  const allPoints = points;
 
   const render = (rangeKey) => {
     currentRange = rangeKey;
@@ -238,7 +224,7 @@ export async function mountMarketKlineChart({ host, points, name }) {
 }
 
 export function klineChartShell(metaText) {
-  return `<div class="chart-toolbar" role="group" aria-label="K线区间">
+  return `<div class="chart-toolbar" role="group" aria-label="走势区间">
       <div class="chart-toolbar-ranges">
         <span class="sub chart-toolbar-label">区间</span>
         <button type="button" data-range="1m">1月</button>
@@ -250,6 +236,6 @@ export function klineChartShell(metaText) {
       <p class="meta chart-toolbar-meta">${metaText}</p>
     </div>
     <div class="chart-wrap market-kline-wrap">
-      <div class="market-kline-chart" role="img" aria-label="K线走势图"></div>
+      <div class="market-kline-chart" role="img" aria-label="走势折线图"></div>
     </div>`;
 }
