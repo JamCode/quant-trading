@@ -216,8 +216,8 @@ def market_index_global_names() -> list[str]:
 
 
 def market_index_global_daily_cron_hour() -> int:
-    """US/Europe close snapshot (~05:10 Beijing after US session)."""
-    return int(os.environ.get("MARKET_INDEX_GLOBAL_DAILY_CRON_HOUR", "5"))
+    """US close is ~04:00–05:00 Beijing; run after Sina/EM publish the bar."""
+    return int(os.environ.get("MARKET_INDEX_GLOBAL_DAILY_CRON_HOUR", "8"))
 
 
 def market_index_global_daily_cron_minute() -> int:
@@ -232,11 +232,11 @@ def market_index_hk_names() -> list[str]:
 
 
 def market_index_hk_daily_cron_hour() -> int:
-    return int(os.environ.get("MARKET_INDEX_HK_DAILY_CRON_HOUR", "16"))
+    return int(os.environ.get("MARKET_INDEX_HK_DAILY_CRON_HOUR", "17"))
 
 
 def market_index_hk_daily_cron_minute() -> int:
-    return int(os.environ.get("MARKET_INDEX_HK_DAILY_CRON_MINUTE", "10"))
+    return int(os.environ.get("MARKET_INDEX_HK_DAILY_CRON_MINUTE", "0"))
 
 
 def market_index_backfill_days() -> int:
