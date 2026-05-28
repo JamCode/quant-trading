@@ -48,3 +48,5 @@ def test_run_backtest_success(monkeypatch):
     assert out["summary"]["bars"] == 100
     assert len(out["equity"]) == 100
     assert out["meta"]["strategy_id"] == "sma_crossover"
+    # close 100..199 → buy-and-hold +99%
+    assert out["summary"]["benchmark_return"] == pytest.approx(0.99, rel=1e-6)

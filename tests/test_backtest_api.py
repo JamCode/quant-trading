@@ -24,6 +24,7 @@ def test_run_backtest_mocked():
             "sharpe_ann_approx": 1.0,
             "strategy": "sma_crossover",
             "bars": 100,
+            "benchmark_return": 0.08,
         },
         "equity": [{"trade_date": "2024-01-02", "equity": 100000.0}],
         "meta": {

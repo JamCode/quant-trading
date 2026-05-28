@@ -11,6 +11,8 @@ from quant_trading.backtest.constants import (
     MIN_BARS,
 )
 from quant_trading.backtest.engine import BacktestConfig, BacktestEngine
+from fund_platform import market_index_queries
+
 from quant_trading.backtest.loaders import load_index_ohlcv
 from quant_trading.strategies.registry import get_strategy_entry
 
@@ -70,6 +72,19 @@ def run_backtest(conn, req: BacktestRunRequest) -> dict[str, Any]:
         for ts in result.index
     ]
 
+    first_close = float(ohlcv["close"].iloc[0])
+    last_close = float(ohlcv["close"].iloc[-1])
+    benchmark_return = (
+        last_close / first_close - 1.0 if first_close > 0 else float("nan")
+    )
+
+    index_name = req.code.strip()
+    snap = market_index_queries.query_market_index_snapshot(
+        conn, req.code.strip(), trade_date=end.isoformat()
+    )
+    if snap and snap.get("name"):
+        index_name = str(snap["name"])
+
     return {
         "summary": {
             "final_equity": float(summary["final_equity"]),
@@ -78,12 +93,16 @@ def run_backtest(conn, req: BacktestRunRequest) -> dict[str, Any]:
             "sharpe_ann_approx": float(summary["sharpe_ann_approx"]),
             "strategy": str(summary["strategy"]),
             "bars": int(len(ohlcv)),
+            "benchmark_return": float(benchmark_return),
         },
         "equity": equity,
         "meta": {
             "code": req.code.strip(),
+            "index_name": index_name,
             "strategy_id": req.strategy_id,
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
+            "benchmark_first_close": first_close,
+            "benchmark_last_close": last_close,
         },
     }

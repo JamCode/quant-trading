@@ -74,9 +74,17 @@ function collectParams(strategy) {
   return out;
 }
 
-function renderMetrics(summary) {
+function renderMetrics(summary, meta) {
+  const benchLabel = meta?.index_name
+    ? `${meta.index_name} 持有收益`
+    : "标的持有收益";
+  const bench =
+    summary.benchmark_return != null
+      ? fmtPctRatio(summary.benchmark_return)
+      : "—";
   return `<dl class="metric-cards">
-    <div class="metric-card"><dt>总收益率</dt><dd>${escapeHtml(fmtPctRatio(summary.total_return))}</dd></div>
+    <div class="metric-card"><dt>策略总收益率</dt><dd>${escapeHtml(fmtPctRatio(summary.total_return))}</dd></div>
+    <div class="metric-card"><dt>${escapeHtml(benchLabel)}</dt><dd>${escapeHtml(bench)}</dd></div>
     <div class="metric-card"><dt>最大回撤</dt><dd>${escapeHtml(fmtPctRatio(summary.max_drawdown))}</dd></div>
     <div class="metric-card"><dt>Sharpe(近似)</dt><dd>${escapeHtml(fmtNum(summary.sharpe_ann_approx))}</dd></div>
     <div class="metric-card"><dt>期末权益</dt><dd>${escapeHtml(fmtNum(summary.final_equity, 0))}</dd></div>
@@ -206,7 +214,7 @@ export async function mountBacktest() {
         errorEl.innerHTML = `<div class="banner-error">${escapeHtml(String(detail))}</div>`;
         return;
       }
-      metricsEl.innerHTML = renderMetrics(data.summary || {});
+      metricsEl.innerHTML = renderMetrics(data.summary || {}, data.meta || {});
       resultsEl.hidden = false;
       disposeChart = await mountEquityChart(chartEl, data.equity || []);
     } catch (err) {
