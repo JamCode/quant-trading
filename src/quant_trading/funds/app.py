@@ -961,6 +961,11 @@ def _advisor_api_base() -> str:
     return "/api/advisor"
 
 
+@app.get("/backtest", response_class=HTMLResponse)
+def backtest_page(request: Request):
+    return _render_shell(request, page_title="策略回测")
+
+
 @app.get("/advisor", response_class=HTMLResponse)
 def advisor_page(request: Request):
     return _render_shell(request, page_title="基金 AI 助手")

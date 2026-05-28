@@ -59,3 +59,9 @@ def test_shell_home_returns_html():
     assert response.status_code == 200
     assert "fund-app/main.js" in response.text
     assert "app-shell" in response.text
+
+
+def test_shell_backtest_returns_html():
+    response = client.get("/backtest")
+    assert response.status_code == 200
+    assert "fund-app/main.js" in response.text
