@@ -70,13 +70,11 @@ function snapshotGrid(snap) {
     .join("")}</dl>`;
 }
 
-export async function mountIndexDetail(code, query) {
+export async function mountIndexDetail(code) {
   const host = main();
   host.innerHTML = '<p class="loading">加载中…</p>';
   try {
-    const detail = await apiGet(`/market-indices/${encodeURIComponent(code)}`, {
-      trade_date: query.trade_date || "",
-    });
+    const detail = await apiGet(`/market-indices/${encodeURIComponent(code)}`);
     const snap = detail.snapshot || {};
     const name = snap.name || code;
     const td = detail.trade_date || snap.trade_date || "";
@@ -92,7 +90,7 @@ export async function mountIndexDetail(code, query) {
 
     host.querySelector("#indices-back")?.addEventListener("click", (event) => {
       event.preventDefault();
-      navigate("/indices", { query: td ? { trade_date: td } : {} });
+      navigate("/indices");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
 

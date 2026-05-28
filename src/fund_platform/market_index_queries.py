@@ -107,25 +107,43 @@ def list_market_indices(
     *,
     trade_date: Optional[str] = None,
     region: str = "all",
-) -> tuple[list[dict[str, Any]], str]:
+) -> tuple[list[dict[str, Any]], Optional[str]]:
     reg = (region or "all").lower()
     if reg not in ("all", _REGION_CN, _REGION_HK, _REGION_GLOBAL):
         reg = "all"
-    td = trade_date or latest_market_index_date(conn, region=reg)
-    if not td:
-        return [], ""
     clause, clause_params = _region_where(reg)
     cur = _cursor(conn)
-    cur.execute(
-        f"""
-        SELECT trade_date, code, name, open_px, high_px, low_px, close_px,
-               prev_close, change_pct, change_amt, volume, amount, updated_at
-        FROM market_index_daily
-        WHERE trade_date = %s AND ({clause})
-        ORDER BY code ASC
-        """,
-        [td, *clause_params],
-    )
+
+    if trade_date:
+        td = trade_date
+        cur.execute(
+            f"""
+            SELECT trade_date, code, name, open_px, high_px, low_px, close_px,
+                   prev_close, change_pct, change_amt, volume, amount, updated_at
+            FROM market_index_daily
+            WHERE trade_date = %s AND ({clause})
+            ORDER BY code ASC
+            """,
+            [td, *clause_params],
+        )
+    else:
+        td = None
+        cur.execute(
+            f"""
+            SELECT m.trade_date, m.code, m.name, m.open_px, m.high_px, m.low_px, m.close_px,
+                   m.prev_close, m.change_pct, m.change_amt, m.volume, m.amount, m.updated_at
+            FROM market_index_daily m
+            INNER JOIN (
+                SELECT code, MAX(trade_date) AS max_td
+                FROM market_index_daily
+                WHERE ({clause})
+                GROUP BY code
+            ) latest ON m.code = latest.code AND m.trade_date = latest.max_td
+            ORDER BY m.code ASC
+            """,
+            clause_params,
+        )
+
     items = [_serialize_row(r) for r in cur.fetchall()]
 
     def _sort_key(r: dict[str, Any]) -> tuple[int, str]:
@@ -145,19 +163,29 @@ def query_market_index_snapshot(
     sym = code.strip()
     if not sym:
         return None
-    td = trade_date or latest_market_index_date(conn)
-    if not td:
-        return None
     cur = _cursor(conn)
-    cur.execute(
-        """
-        SELECT trade_date, code, name, open_px, high_px, low_px, close_px,
-               prev_close, change_pct, change_amt, volume, amount, updated_at
-        FROM market_index_daily
-        WHERE trade_date = %s AND code = %s
-        """,
-        (td, sym),
-    )
+    if trade_date:
+        cur.execute(
+            """
+            SELECT trade_date, code, name, open_px, high_px, low_px, close_px,
+                   prev_close, change_pct, change_amt, volume, amount, updated_at
+            FROM market_index_daily
+            WHERE trade_date = %s AND code = %s
+            """,
+            (trade_date, sym),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT trade_date, code, name, open_px, high_px, low_px, close_px,
+                   prev_close, change_pct, change_amt, volume, amount, updated_at
+            FROM market_index_daily
+            WHERE code = %s
+            ORDER BY trade_date DESC
+            LIMIT 1
+            """,
+            (sym,),
+        )
     row = cur.fetchone()
     if not row:
         return None

@@ -254,7 +254,10 @@ def api_market_indices(
     items, td = market_index_queries.list_market_indices(
         conn, trade_date=trade_date, region=region
     )
-    return {"trade_date": td or None, "region": region, "items": items}
+    out: dict[str, Any] = {"region": region, "items": items, "latest_per_code": trade_date is None}
+    if td:
+        out["trade_date"] = td
+    return out
 
 
 @app.get("/api/market-indices/{code}")
@@ -269,7 +272,7 @@ def api_market_index_detail(
     snap = market_index_queries.query_market_index_snapshot(conn, sym, trade_date=trade_date)
     if not snap:
         raise HTTPException(status_code=404, detail="no snapshot for index on trade date")
-    td = trade_date or snap.get("trade_date") or market_index_queries.latest_market_index_date(conn)
+    td = trade_date or snap.get("trade_date")
     return {"snapshot": snap, "trade_date": td}
 
 
