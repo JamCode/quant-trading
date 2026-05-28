@@ -73,7 +73,8 @@ def market_indices_meta(conn) -> dict[str, Any]:
     from fund_platform import market_index_queries
 
     return {
-        "latest_trade_date": market_index_queries.latest_market_index_date(conn),
+        "latest_trade_date": market_index_queries.latest_market_index_date(conn, region="all"),
+        "latest_trade_date_cn": market_index_queries.latest_market_index_date(conn, region="cn"),
         "trade_dates": market_index_queries.list_market_index_dates(conn),
         "region_options": market_index_queries.region_options(),
     }

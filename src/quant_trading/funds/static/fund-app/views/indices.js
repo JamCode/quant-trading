@@ -42,7 +42,11 @@ export async function mountIndices(query) {
   try {
     const meta = await apiGet("/meta/market-indices");
     const region = query.region || "all";
-    const tradeDate = query.trade_date || meta.latest_trade_date || "";
+    const defaultDate =
+      region === "cn"
+        ? meta.latest_trade_date_cn || meta.latest_trade_date
+        : meta.latest_trade_date;
+    const tradeDate = query.trade_date || defaultDate || "";
     const data = await apiGet("/market-indices", {
       trade_date: tradeDate,
       region,

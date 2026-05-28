@@ -54,9 +54,27 @@ def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def latest_market_index_date(conn) -> Optional[str]:
+def _region_where(region: str) -> tuple[str, list[Any]]:
+    reg = (region or "all").lower()
+    if reg == _REGION_CN:
+        return "code REGEXP '^[0-9]{6}$'", []
+    if reg == _REGION_HK:
+        return "code IN ('HSI', 'HSCEI', 'HSCCI')", []
+    if reg == _REGION_GLOBAL:
+        return (
+            "code NOT REGEXP '^[0-9]{6}$' AND code NOT IN ('HSI', 'HSCEI', 'HSCCI')",
+            [],
+        )
+    return "1=1", []
+
+
+def latest_market_index_date(conn, *, region: str = "all") -> Optional[str]:
+    clause, params = _region_where(region)
     cur = _cursor(conn)
-    cur.execute("SELECT MAX(trade_date) AS d FROM market_index_daily")
+    cur.execute(
+        f"SELECT MAX(trade_date) AS d FROM market_index_daily WHERE {clause}",
+        params,
+    )
     row = cur.fetchone()
     if not row or not row["d"]:
         return None
@@ -90,26 +108,25 @@ def list_market_indices(
     trade_date: Optional[str] = None,
     region: str = "all",
 ) -> tuple[list[dict[str, Any]], str]:
-    td = trade_date or latest_market_index_date(conn)
-    if not td:
-        return [], ""
-    cur = _cursor(conn)
-    cur.execute(
-        """
-        SELECT trade_date, code, name, open_px, high_px, low_px, close_px,
-               prev_close, change_pct, change_amt, volume, amount, updated_at
-        FROM market_index_daily
-        WHERE trade_date = %s
-        ORDER BY code ASC
-        """,
-        (td,),
-    )
-    items = [_serialize_row(r) for r in cur.fetchall()]
     reg = (region or "all").lower()
     if reg not in ("all", _REGION_CN, _REGION_HK, _REGION_GLOBAL):
         reg = "all"
-    if reg != "all":
-        items = [r for r in items if r.get("region") == reg]
+    td = trade_date or latest_market_index_date(conn, region=reg)
+    if not td:
+        return [], ""
+    clause, clause_params = _region_where(reg)
+    cur = _cursor(conn)
+    cur.execute(
+        f"""
+        SELECT trade_date, code, name, open_px, high_px, low_px, close_px,
+               prev_close, change_pct, change_amt, volume, amount, updated_at
+        FROM market_index_daily
+        WHERE trade_date = %s AND ({clause})
+        ORDER BY code ASC
+        """,
+        [td, *clause_params],
+    )
+    items = [_serialize_row(r) for r in cur.fetchall()]
 
     def _sort_key(r: dict[str, Any]) -> tuple[int, str]:
         order = {"cn": 0, "hk": 1, "global": 2}
