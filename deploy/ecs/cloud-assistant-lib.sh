@@ -101,8 +101,13 @@ cloud_assistant_run_shell() {
   invoke_id="$(python3 -c "import json,sys; print(json.load(sys.stdin)['InvokeId'])" <<<"$json")"
   echo "==> InvokeId=${invoke_id}"
 
-  for i in $(seq 1 60); do
-    sleep 3
+  local poll_secs=3
+  local max_polls=$(( (ECS_COMMAND_TIMEOUT + poll_secs - 1) / poll_secs ))
+  if (( max_polls < 60 )); then
+    max_polls=60
+  fi
+  for i in $(seq 1 "$max_polls"); do
+    sleep "$poll_secs"
     json="$(aliyun ecs DescribeInvocations \
       --RegionId "$ECS_REGION_ID" \
       --InvokeId "$invoke_id" \
