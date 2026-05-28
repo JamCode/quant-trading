@@ -9,12 +9,15 @@ import { mountDashboard } from "./views/dashboard.js";
 import { mountFunds } from "./views/funds.js";
 import { mountSectors } from "./views/sectors.js";
 import { mountValuation } from "./views/valuation.js";
+import { mountIndexDetail } from "./views/index-detail.js";
+import { mountIndices } from "./views/indices.js";
 import { mountStockDetail } from "./views/stock-detail.js";
 import { mountStocks } from "./views/stocks.js";
 
 const NAV = [
   { path: "/", label: "行业仪表盘", title: "行业仪表盘" },
   { path: "/sectors", label: "行业资金流向", title: "行业资金流向" },
+  { path: "/indices", label: "指数行情", title: "指数行情" },
   { path: "/valuation", label: "宽基 PE", title: "宽基 PE" },
   { path: "/funds", label: "基金目录", title: "基金目录" },
   { path: "/stocks", label: "A 股行情", title: "A 股行情" },
@@ -31,7 +34,8 @@ function renderSidebar(activePath) {
   NAV.forEach((item) => {
     const active =
       activePath === item.path ||
-      (item.path === "/stocks" && activePath.startsWith("/stocks/"))
+      (item.path === "/stocks" && activePath.startsWith("/stocks/")) ||
+      (item.path === "/indices" && activePath.startsWith("/indices/"))
         ? " active"
         : "";
     const muted = item.muted ? " nav-muted" : "";
@@ -44,6 +48,9 @@ function setTitle(path) {
   let item = NAV.find((n) => n.path === path);
   if (!item && path.startsWith("/stocks/")) {
     item = NAV.find((n) => n.path === "/stocks");
+  }
+  if (!item && path.startsWith("/indices/")) {
+    item = NAV.find((n) => n.path === "/indices");
   }
   item = item || NAV[0];
   document.title = item.title;
@@ -78,6 +85,15 @@ async function onRoute({ path, query }) {
     await mountDashboard(query);
   } else if (normalized === "/sectors") {
     await mountSectors(query);
+  } else if (normalized === "/indices") {
+    await mountIndices(query);
+  } else if (/^\/indices\/[^/]+$/.test(normalized)) {
+    const indexCode = decodeURIComponent(normalized.split("/")[2]);
+    await mountIndexDetail(indexCode, query);
+    const el = document.getElementById("view-title");
+    if (el) {
+      el.textContent = `指数 ${indexCode}`;
+    }
   } else if (normalized === "/valuation") {
     await mountValuation(query);
   } else if (normalized === "/funds") {

@@ -24,6 +24,7 @@ from fund_platform import industry_pe_queries
 from fund_platform import queries
 from fund_platform import sector_constituents
 from fund_platform import sector_queries
+from fund_platform import market_index_queries
 from fund_platform import stock_queries
 from fund_platform import settings as fp_settings
 from fund_platform import web_meta_queries
@@ -237,6 +238,63 @@ def api_meta_funds(conn=Depends(get_conn)):
 @app.get("/api/meta/stocks")
 def api_meta_stocks(conn=Depends(get_conn)):
     return web_meta_queries.stocks_catalog_meta(conn)
+
+
+@app.get("/api/meta/market-indices")
+def api_meta_market_indices(conn=Depends(get_conn)):
+    return web_meta_queries.market_indices_meta(conn)
+
+
+@app.get("/api/market-indices")
+def api_market_indices(
+    conn=Depends(get_conn),
+    trade_date: Optional[str] = Query(default=None),
+    region: str = Query(default="all"),
+):
+    items, td = market_index_queries.list_market_indices(
+        conn, trade_date=trade_date, region=region
+    )
+    return {"trade_date": td or None, "region": region, "items": items}
+
+
+@app.get("/api/market-indices/{code}")
+def api_market_index_detail(
+    code: str,
+    conn=Depends(get_conn),
+    trade_date: Optional[str] = Query(default=None),
+):
+    sym = code.strip()
+    if not sym:
+        raise HTTPException(status_code=404, detail="unknown index code")
+    snap = market_index_queries.query_market_index_snapshot(conn, sym, trade_date=trade_date)
+    if not snap:
+        raise HTTPException(status_code=404, detail="no snapshot for index on trade date")
+    td = trade_date or snap.get("trade_date") or market_index_queries.latest_market_index_date(conn)
+    return {"snapshot": snap, "trade_date": td}
+
+
+@app.get("/api/market-indices/{code}/history")
+def api_market_index_history(
+    code: str,
+    conn=Depends(get_conn),
+    limit: int = Query(default=250, ge=1, le=2000),
+    order: str = Query(default="asc"),
+):
+    sym = code.strip()
+    if not sym:
+        raise HTTPException(status_code=404, detail="unknown index code")
+    ord_norm = "asc" if order.lower() == "asc" else "desc"
+    items, total = market_index_queries.query_market_index_history(
+        conn, sym, limit=limit, order=ord_norm
+    )
+    return {
+        "code": sym,
+        "source": "db",
+        "limit": limit,
+        "order": ord_norm,
+        "items": items,
+        "total": total,
+    }
 
 
 def _require_stock_code(code: str) -> str:
@@ -827,6 +885,18 @@ def api_dashboard(
 @app.get("/funds", response_class=HTMLResponse)
 def funds_catalog(request: Request):
     return _render_shell(request, page_title="基金目录")
+
+
+@app.get("/indices", response_class=HTMLResponse)
+def market_indices_page(request: Request):
+    return _render_shell(request, page_title="指数行情")
+
+
+@app.get("/indices/{code}", response_class=HTMLResponse)
+def market_index_detail_page(request: Request, code: str):
+    if not code.strip():
+        raise HTTPException(status_code=404, detail="unknown index code")
+    return _render_shell(request, page_title="指数详情")
 
 
 @app.get("/stocks", response_class=HTMLResponse)
