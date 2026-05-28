@@ -683,81 +683,51 @@ def _merge_cn_amount_from_em(
     return out
 
 
-def fetch_cn_index_daily_history_em(code: str, name: str) -> list[dict[str, Any]]:
-    """East Money index daily K (成交额); browser headers for ECS."""
+def _fetch_cn_index_em_kline_page(
+    code: str,
+    name: str,
+    *,
+    beg: str,
+    end: str,
+) -> list[dict[str, Any]]:
+    """One East Money K-line request (date range YYYYMMDD)."""
     import requests
 
-    sym = code_to_em_symbol(code)
     c = code.strip().zfill(6)
-    if sym.startswith("sz"):
+    if c.startswith("399") or c.startswith(("159", "16")):
         secid = f"0.{c}"
     else:
         secid = f"1.{c}"
 
     params = {
         "secid": secid,
+        "ut": "7eea3edcaed734bea9cbfc24409ed989",
         "fields1": "f1,f2,f3,f4,f5",
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
         "klt": "101",
         "fqt": "0",
-        "beg": "19900101",
-        "end": "20500101",
+        "beg": beg,
+        "end": end,
     }
     last_exc: Optional[Exception] = None
-    for attempt in range(4):
-        for url in _EM_CN_KLINE_URLS:
-            try:
-                r = requests.get(
-                    url,
-                    params=params,
-                    headers=_EM_CN_KLINE_HEADERS,
-                    timeout=30,
-                )
-                r.raise_for_status()
-                klines = (r.json().get("data") or {}).get("klines") or []
-                if not klines:
+    for url in _EM_CN_KLINE_URLS:
+        try:
+            r = requests.get(
+                url,
+                params=params,
+                headers=_EM_CN_KLINE_HEADERS,
+                timeout=45,
+            )
+            r.raise_for_status()
+            klines = (r.json().get("data") or {}).get("klines") or []
+            if not klines:
+                continue
+            rows: list[dict[str, Any]] = []
+            for line in klines:
+                parts = str(line).split(",")
+                if len(parts) < 7:
                     continue
-                rows: list[dict[str, Any]] = []
-                for line in klines:
-                    parts = str(line).split(",")
-                    if len(parts) < 7:
-                        continue
-                    td = _parse_trade_date(parts[0])
-                    if not td:
-                        continue
-                    rows.append(
-                        {
-                            "trade_date": td,
-                            "code": c,
-                            "name": name,
-                            "open_px": _opt_float(parts[1]),
-                            "close_px": _opt_float(parts[2]),
-                            "high_px": _opt_float(parts[3]),
-                            "low_px": _opt_float(parts[4]),
-                            "volume": _opt_int(parts[5]),
-                            "amount": _opt_float(parts[6]),
-                            "prev_close": None,
-                            "change_pct": None,
-                            "change_amt": None,
-                        }
-                    )
-                if rows:
-                    delay = fp_settings.market_index_request_delay_sec()
-                    if delay > 0:
-                        time.sleep(delay)
-                    return _attach_daily_returns(rows)
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-        time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
-
-    try:
-        import akshare as ak
-
-        df = ak.stock_zh_index_daily_em(symbol=code_to_em_symbol(code))
-        if df is not None and not df.empty:
-            rows = []
-            for rec in df.to_dict("records"):
-                td = _parse_trade_date(rec.get("date"))
+                td = _parse_trade_date(parts[0])
                 if not td:
                     continue
                 rows.append(
@@ -765,28 +735,142 @@ def fetch_cn_index_daily_history_em(code: str, name: str) -> list[dict[str, Any]
                         "trade_date": td,
                         "code": c,
                         "name": name,
-                        "open_px": _opt_float(rec.get("open")),
-                        "close_px": _opt_float(rec.get("close")),
-                        "high_px": _opt_float(rec.get("high")),
-                        "low_px": _opt_float(rec.get("low")),
-                        "volume": _opt_int(rec.get("volume")),
-                        "amount": _opt_float(rec.get("amount")),
+                        "open_px": _opt_float(parts[1]),
+                        "close_px": _opt_float(parts[2]),
+                        "high_px": _opt_float(parts[3]),
+                        "low_px": _opt_float(parts[4]),
+                        "volume": _opt_int(parts[5]),
+                        "amount": _opt_float(parts[6]),
                         "prev_close": None,
                         "change_pct": None,
                         "change_amt": None,
                     }
                 )
             if rows:
-                delay = fp_settings.market_index_request_delay_sec()
-                if delay > 0:
-                    time.sleep(delay)
-                return _attach_daily_returns(rows)
-    except Exception as exc:  # noqa: BLE001
-        last_exc = exc
-
+                return rows
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
     if last_exc:
-        logger.warning("cn index %s EM history unavailable: %s", code, last_exc)
+        raise last_exc
     return []
+
+
+def fetch_cn_index_daily_history_em(
+    code: str,
+    name: str,
+    *,
+    chunked: bool = False,
+) -> list[dict[str, Any]]:
+    """East Money index daily K (含成交额). ``chunked=True`` 按年分片，适合 ECS 长跑回填。"""
+    c = code.strip().zfill(6)
+    delay = fp_settings.market_index_request_delay_sec()
+
+    if not chunked:
+        last_exc: Optional[Exception] = None
+        for attempt in range(4):
+            try:
+                rows = _fetch_cn_index_em_kline_page(
+                    c, name, beg="19900101", end="20500101"
+                )
+                if rows:
+                    if delay > 0:
+                        time.sleep(delay)
+                    return _attach_daily_returns(rows)
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+            time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
+        try:
+            import akshare as ak
+
+            df = ak.stock_zh_index_daily_em(symbol=code_to_em_symbol(c))
+            if df is not None and not df.empty:
+                rows = []
+                for rec in df.to_dict("records"):
+                    td = _parse_trade_date(rec.get("date"))
+                    if not td:
+                        continue
+                    rows.append(
+                        {
+                            "trade_date": td,
+                            "code": c,
+                            "name": name,
+                            "open_px": _opt_float(rec.get("open")),
+                            "close_px": _opt_float(rec.get("close")),
+                            "high_px": _opt_float(rec.get("high")),
+                            "low_px": _opt_float(rec.get("low")),
+                            "volume": _opt_int(rec.get("volume")),
+                            "amount": _opt_float(rec.get("amount")),
+                            "prev_close": None,
+                            "change_pct": None,
+                            "change_amt": None,
+                        }
+                    )
+                if rows:
+                    if delay > 0:
+                        time.sleep(delay)
+                    return _attach_daily_returns(rows)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+        if last_exc:
+            logger.warning("cn index %s EM history unavailable: %s", c, last_exc)
+        return []
+
+    # Chunked: try full once, then year-by-year merge
+    by_date: dict[str, dict[str, Any]] = {}
+    try:
+        full = _fetch_cn_index_em_kline_page(c, name, beg="19900101", end="20500101")
+        for row in full:
+            by_date[str(row["trade_date"])] = row
+        if by_date:
+            logger.info("cn index %s EM full fetch ok rows=%s", c, len(by_date))
+            return _attach_daily_returns(list(by_date.values()))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("cn index %s EM full fetch failed, use yearly chunks: %s", c, exc)
+
+    year_end = _now_cn().year
+    start_year = 1990 if c == "000001" else 2000
+    if c == "000688":
+        start_year = 2020
+    elif c == "399006":
+        start_year = 2010
+    elif c in ("000300", "000905"):
+        start_year = 2002
+    elif c == "000016":
+        start_year = 2004
+
+    for year in range(start_year, year_end + 1):
+        beg = f"{year}0101"
+        end = f"{year}1231"
+        for attempt in range(3):
+            try:
+                chunk = _fetch_cn_index_em_kline_page(c, name, beg=beg, end=end)
+                for row in chunk:
+                    by_date[str(row["trade_date"])] = row
+                break
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "cn index %s EM chunk %s attempt %s: %s",
+                    c,
+                    year,
+                    attempt + 1,
+                    exc,
+                )
+                time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
+        if delay > 0:
+            time.sleep(max(delay, 1.5))
+
+    if not by_date:
+        return []
+    with_amt = sum(1 for r in by_date.values() if r.get("amount") is not None)
+    logger.info(
+        "cn index %s EM chunked rows=%s with_amount=%s span=%s..%s",
+        c,
+        len(by_date),
+        with_amt,
+        min(by_date),
+        max(by_date),
+    )
+    return _attach_daily_returns(list(by_date.values()))
 
 
 def fetch_cn_index_daily_history_sina(code: str, name: str) -> list[dict[str, Any]]:

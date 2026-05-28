@@ -121,11 +121,12 @@ def _fetch_em_with_retry(
     *,
     max_attempts: int,
     backoff_base: float,
+    chunked: bool,
 ) -> list[dict[str, Any]]:
     last_err: Optional[Exception] = None
     for attempt in range(max_attempts):
         try:
-            rows = fetch_cn_index_daily_history_em(code, name)
+            rows = fetch_cn_index_daily_history_em(code, name, chunked=chunked)
             if rows:
                 return rows
             last_err = RuntimeError("empty EM response")
@@ -144,6 +145,11 @@ def _fetch_em_with_retry(
     if last_err:
         raise last_err
     return []
+
+
+def _clear_amount_state(state: dict[str, Any]) -> None:
+    for rec in state.get("indices", {}).values():
+        rec.pop("amount", None)
 
 
 def _db_cn_summary() -> list[dict[str, Any]]:
@@ -180,6 +186,8 @@ def run_backfill(
     gap_between_phases: float,
     em_attempts: int,
     em_backoff: float,
+    em_chunked: bool,
+    reset_amount: bool,
 ) -> dict[str, Any]:
     want = {c.strip().zfill(6) for c in codes} if codes else None
     indices = [
@@ -189,6 +197,8 @@ def run_backfill(
         return {"ok": False, "error": "no indices selected"}
 
     state = _load_state(state_path) if resume else {"started_at": _utc_now(), "indices": {}, "errors": []}
+    if reset_amount:
+        _clear_amount_state(state)
     phases = ["sina", "amount"] if phase == "all" else [phase]
 
     report: dict[str, Any] = {
@@ -226,6 +236,7 @@ def run_backfill(
                         name,
                         max_attempts=em_attempts,
                         backoff_base=em_backoff,
+                        chunked=em_chunked,
                     )
                     if not rows:
                         raise RuntimeError("East Money returned no rows")
@@ -317,6 +328,23 @@ def main() -> int:
         default=8.0,
         help="EM retry backoff base seconds",
     )
+    parser.add_argument(
+        "--em-chunked",
+        action="store_true",
+        default=True,
+        help="Fetch EM K-line year-by-year (default on, better on ECS)",
+    )
+    parser.add_argument(
+        "--no-em-chunked",
+        action="store_false",
+        dest="em_chunked",
+        help="Single full EM request per index",
+    )
+    parser.add_argument(
+        "--reset-amount",
+        action="store_true",
+        help="Ignore prior amount phase checkpoint and retry all",
+    )
     args = parser.parse_args()
     codes = [c.strip() for c in args.codes.split(",") if c.strip()] or None
 
@@ -332,6 +360,8 @@ def main() -> int:
         gap_between_phases=args.gap_between_phases,
         em_attempts=args.em_attempts,
         em_backoff=args.em_backoff,
+        em_chunked=args.em_chunked,
+        reset_amount=args.reset_amount,
     )
     print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
     return 0 if out.get("ok") else 1
