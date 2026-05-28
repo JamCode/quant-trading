@@ -1,4 +1,4 @@
-import { apiGet, escapeHtml, fmtPct, pctClassNum } from "../api.js";
+import { apiGet, escapeHtml, fetchAllMarketIndexHistory, fmtPct, pctClassNum } from "../api.js";
 import { navigate } from "../router.js";
 import { klineChartShell, mountMarketKlineChart } from "../components/market-kline-chart.js";
 
@@ -83,7 +83,7 @@ export async function mountIndexDetail(code) {
       <p class="meta">快照数据日 ${escapeHtml(td)}</p>
       ${snapshotGrid(snap)}
       <section class="panel" id="index-kline-panel">
-        <p class="meta" id="index-chart-meta">加载走势…</p>
+        <p class="meta" id="index-chart-meta">加载全部历史走势…</p>
         <div id="index-kline-host"></div>
       </section>`;
 
@@ -96,19 +96,22 @@ export async function mountIndexDetail(code) {
     const metaEl = host.querySelector("#index-chart-meta");
     const klineHost = host.querySelector("#index-kline-host");
     try {
-      const hist = await apiGet(`/market-indices/${encodeURIComponent(code)}/history`, {
-        limit: 500,
-        order: "asc",
-      });
+      const hist = await fetchAllMarketIndexHistory(code);
       const items = normalizeHistoryItems(hist.items);
       if (metaEl) {
         metaEl.textContent =
           items.length > 0
-            ? `共 ${hist.total ?? items.length} 个交易日 · 已加载 ${items.length} 条`
+            ? `共 ${hist.total} 个交易日 · 已加载 ${items.length} 条`
             : "暂无历史行情";
       }
       if (items.length && klineHost) {
-        klineHost.innerHTML = klineChartShell("点上方区间切换范围 · 副图为成交额（无则显示成交量）");
+        const span =
+          items.length > 0
+            ? `${items[0].trade_date} ~ ${items[items.length - 1].trade_date}`
+            : "";
+        klineHost.innerHTML = klineChartShell(
+          `默认显示全部已加载数据（${span}）· 可点区间缩小 · 副图为成交额`
+        );
         chartHandle = await mountMarketKlineChart({
           host: klineHost,
           points: items,

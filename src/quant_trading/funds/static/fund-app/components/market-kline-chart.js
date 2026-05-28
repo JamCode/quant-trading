@@ -39,7 +39,14 @@ function fmtVolAxis(value) {
 }
 
 function sliceRange(points, rangeKey) {
-  const limits = { "1m": 22, "3m": 66, "6m": 126, "1y": 250 };
+  const limits = {
+    "1m": 22,
+    "3m": 66,
+    "6m": 126,
+    "1y": 250,
+    "3y": 750,
+    "5y": 1250,
+  };
   const n = limits[rangeKey];
   if (!n || points.length <= n) {
     return points;
@@ -191,7 +198,7 @@ export async function mountMarketKlineChart({ host, points, name }) {
 
   const echarts = await loadEcharts();
   const chart = echarts.init(el, null, { renderer: "canvas" });
-  let currentRange = "1y";
+  let currentRange = "all";
   const allPoints = points;
 
   const render = (rangeKey) => {
@@ -210,7 +217,7 @@ export async function mountMarketKlineChart({ host, points, name }) {
       host.querySelectorAll(".chart-toolbar button[data-range]").forEach((b) => {
         b.classList.toggle("active", b === btn);
       });
-      render(btn.getAttribute("data-range") || "1y");
+      render(btn.getAttribute("data-range") || "all");
     });
   });
 
@@ -230,8 +237,10 @@ export function klineChartShell(metaText) {
         <button type="button" data-range="1m">1月</button>
         <button type="button" data-range="3m">3月</button>
         <button type="button" data-range="6m">6月</button>
-        <button type="button" data-range="1y" class="active">1年</button>
-        <button type="button" data-range="all">全部</button>
+        <button type="button" data-range="1y">1年</button>
+        <button type="button" data-range="3y">3年</button>
+        <button type="button" data-range="5y">5年</button>
+        <button type="button" data-range="all" class="active">全部</button>
       </div>
       <p class="meta chart-toolbar-meta">${metaText}</p>
     </div>

@@ -197,6 +197,7 @@ def query_market_index_history(
     code: str,
     *,
     limit: int = 250,
+    offset: int = 0,
     order: str = "asc",
 ) -> tuple[list[dict[str, Any]], int]:
     sym = code.strip()
@@ -209,19 +210,30 @@ def query_market_index_history(
     )
     total = int(cur.fetchone()["c"])
     lim = max(1, min(limit, 2000))
+    off = max(0, offset)
+    asc = order.lower() == "asc"
     cur.execute(
         """
         SELECT trade_date, open_px, high_px, low_px, close_px,
                change_pct, volume, amount
         FROM market_index_daily
         WHERE code = %s AND close_px IS NOT NULL
+        ORDER BY trade_date ASC
+        LIMIT %s OFFSET %s
+        """
+        if asc
+        else """
+        SELECT trade_date, open_px, high_px, low_px, close_px,
+               change_pct, volume, amount
+        FROM market_index_daily
+        WHERE code = %s AND close_px IS NOT NULL
         ORDER BY trade_date DESC
-        LIMIT %s
+        LIMIT %s OFFSET %s
         """,
-        (sym, lim),
+        (sym, lim, off),
     )
     rows = cur.fetchall()
-    if order.lower() == "asc":
+    if not asc:
         rows = list(reversed(rows))
 
     items: list[dict[str, Any]] = []

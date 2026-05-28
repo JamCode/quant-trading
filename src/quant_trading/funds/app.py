@@ -281,6 +281,7 @@ def api_market_index_history(
     code: str,
     conn=Depends(get_conn),
     limit: int = Query(default=250, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
     order: str = Query(default="asc"),
 ):
     sym = code.strip()
@@ -288,12 +289,13 @@ def api_market_index_history(
         raise HTTPException(status_code=404, detail="unknown index code")
     ord_norm = "asc" if order.lower() == "asc" else "desc"
     items, total = market_index_queries.query_market_index_history(
-        conn, sym, limit=limit, order=ord_norm
+        conn, sym, limit=limit, offset=offset, order=ord_norm
     )
     return {
         "code": sym,
         "source": "db",
         "limit": limit,
+        "offset": offset,
         "order": ord_norm,
         "items": items,
         "total": total,
