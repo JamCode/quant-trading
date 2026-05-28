@@ -12,7 +12,10 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from quant_trading.backtest.service import BacktestRunRequest, run_backtest
+from quant_trading.strategies.registry import list_strategies_for_api
 
 from fund_platform import advisor_parse
 from fund_platform import advisor_prompt
@@ -300,6 +303,38 @@ def api_market_index_history(
         "items": items,
         "total": total,
     }
+
+
+class BacktestRunBody(BaseModel):
+    code: str
+    strategy_id: str
+    params: dict = Field(default_factory=dict)
+    start_date: str
+    end_date: str
+    initial_cash: Optional[float] = None
+
+
+@app.get("/api/backtest/strategies")
+def api_backtest_strategies():
+    return {"strategies": list_strategies_for_api()}
+
+
+@app.post("/api/backtest/run")
+def api_backtest_run(body: BacktestRunBody, conn=Depends(get_conn)):
+    req = BacktestRunRequest(
+        code=body.code,
+        strategy_id=body.strategy_id,
+        params=body.params,
+        start_date=body.start_date,
+        end_date=body.end_date,
+        initial_cash=body.initial_cash or 100_000.0,
+    )
+    try:
+        return run_backtest(conn, req)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _require_stock_code(code: str) -> str:

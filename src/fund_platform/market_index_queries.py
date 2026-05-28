@@ -256,3 +256,46 @@ def query_market_index_history(
             }
         )
     return items, total
+
+
+def query_market_index_bars(
+    conn,
+    code: str,
+    *,
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, Any]]:
+    sym = code.strip()
+    if not sym:
+        return []
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT trade_date, open_px, high_px, low_px, close_px, volume
+        FROM market_index_daily
+        WHERE code = %s
+          AND close_px IS NOT NULL
+          AND trade_date >= %s
+          AND trade_date <= %s
+        ORDER BY trade_date ASC
+        """,
+        (sym, start_date[:10], end_date[:10]),
+    )
+    items: list[dict[str, Any]] = []
+    for row in cur.fetchall():
+        td = row["trade_date"]
+        if isinstance(td, date):
+            td = td.isoformat()
+        td_s = str(td)[:10]
+        close = row.get("close_px")
+        items.append(
+            {
+                "trade_date": td_s,
+                "open": float(row["open_px"]) if row.get("open_px") is not None else None,
+                "high": float(row["high_px"]) if row.get("high_px") is not None else None,
+                "low": float(row["low_px"]) if row.get("low_px") is not None else None,
+                "close": float(close) if close is not None else None,
+                "volume": row.get("volume"),
+            }
+        )
+    return items

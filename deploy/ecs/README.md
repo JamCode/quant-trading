@@ -182,15 +182,20 @@ python -c "from fund_platform.market_index import backfill_market_index_daily; i
 
 验证：`SELECT code, COUNT(*) c, MIN(trade_date), MAX(trade_date) FROM market_index_daily GROUP BY code;`
 
-**A 股指数全历史 + 成交额（一次性，限速防封）** — 先新浪 OHLCV、再东财成交额，支持断点续跑：
+**A 股指数全历史 + 成交额（一次性，限速防封）** — 先新浪 OHLCV、再补成交额（东财优先，ECS 上东财常被限流时用**腾讯**补齐 1990 年起历史），支持断点续跑：
 
 ```bash
 set -a && source deploy/ecs/fund-stack.env && set +a
 python examples/backfill_cn_index_full_history.py --dry-run   # 仅看能拉多少条
 python examples/backfill_cn_index_full_history.py             # 正式写入（约 15–25 分钟）
-# 失败续跑：默认读 examples/.cn_index_full_backfill_state.json
-python examples/backfill_cn_index_full_history.py --phase amount --codes 000001,399006
+# 仅补成交额（不覆盖已有东财成交额，只填 NULL/0）：
+python examples/backfill_cn_index_full_history.py --phase amount --reset-amount --no-resume --gap-em 8
+python examples/backfill_cn_index_amount.py   # 同上逻辑的轻量入口
 ```
+
+验证成交额是否铺满：`SELECT code, MIN(trade_date) AS first_amt FROM market_index_daily WHERE amount>0 GROUP BY code;` 应与该指数最早 K 线日期一致（如 000001 → 1990-12-19）。
+
+**策略回测（SPA）** — 侧边栏「策略回测」或路径 `/backtest`：选 A 股指数 + 已注册策略参数，同步回测。新策略在 `src/quant_trading/strategies/registry.py` 注册后部署即可。
 
 可调：`--gap-sina 8 --gap-em 25 --jitter 4 --gap-between-phases 120 --em-attempts 6`
 

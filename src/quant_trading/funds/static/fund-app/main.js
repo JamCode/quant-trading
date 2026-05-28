@@ -13,11 +13,13 @@ import { mountIndexDetail } from "./views/index-detail.js";
 import { mountIndices } from "./views/indices.js";
 import { mountStockDetail } from "./views/stock-detail.js";
 import { mountStocks } from "./views/stocks.js";
+import { mountBacktest } from "./views/backtest.js";
 
 const NAV = [
   { path: "/", label: "行业仪表盘", title: "行业仪表盘" },
   { path: "/sectors", label: "行业资金流向", title: "行业资金流向" },
   { path: "/indices", label: "指数行情", title: "指数行情" },
+  { path: "/backtest", label: "策略回测", title: "策略回测" },
   { path: "/valuation", label: "宽基 PE", title: "宽基 PE" },
   { path: "/funds", label: "基金目录", title: "基金目录" },
   { path: "/stocks", label: "A 股行情", title: "A 股行情" },
@@ -111,6 +113,8 @@ async function onRoute({ path, query }) {
     await mountAdvisor(query);
   } else if (normalized === "/crawler") {
     await mountCrawler(query);
+  } else if (normalized === "/backtest") {
+    await mountBacktest(query);
   } else {
     main.innerHTML = '<p class="muted">页面未找到</p>';
   }
