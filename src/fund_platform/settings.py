@@ -200,11 +200,11 @@ def market_index_retry_sleep_sec() -> float:
 
 
 def market_index_daily_cron_hour() -> int:
-    return int(os.environ.get("MARKET_INDEX_DAILY_CRON_HOUR", "15"))
+    return int(os.environ.get("MARKET_INDEX_DAILY_CRON_HOUR", "17"))
 
 
 def market_index_daily_cron_minute() -> int:
-    return int(os.environ.get("MARKET_INDEX_DAILY_CRON_MINUTE", "10"))
+    return int(os.environ.get("MARKET_INDEX_DAILY_CRON_MINUTE", "0"))
 
 
 def market_index_global_names() -> list[str]:

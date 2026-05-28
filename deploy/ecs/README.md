@@ -132,7 +132,7 @@ curl -sS http://127.0.0.1:8010/health
 ```
 
 - **Web**：默认监听 **`8010`**（避开吉他栈 chord ONNX 常用 `8000`）。
-- **爬虫**：进程内 APScheduler，默认每日 **`CRAWLER_CRON_HOUR`**（默认 2）点跑全量同步；行业资金流 **18:30**；基金持仓+暴露管道 **周日 03:00**；**大盘指数** 交易日每 **5 分钟** 快照、**15:10** 写入日 K（`MARKET_INDEX_*`）。详见 `fund-stack.env.example`。
+- **爬虫**：进程内 APScheduler，默认每日 **`CRAWLER_CRON_HOUR`**（默认 2）点跑全量同步；行业资金流 **18:30**；基金持仓+暴露管道 **周日 03:00**；**大盘指数** 交易日每 **5 分钟** 快照、A 股日 K **17:00** 写入（`MARKET_INDEX_DAILY_*`）。详见 `fund-stack.env.example`。
 
 ### 爬虫日志（排障）
 
