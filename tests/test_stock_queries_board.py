@@ -13,11 +13,11 @@ def test_normalize_stock_board():
 
 
 def test_board_filter_sql_fragments():
-    assert "688%" in stock_queries.board_filter_sql("kcb")
-    assert "30%" in stock_queries.board_filter_sql("cyb")
+    assert "688%%" in stock_queries.board_filter_sql("kcb")
+    assert "30%%" in stock_queries.board_filter_sql("cyb")
     assert stock_queries.board_filter_sql("nope") == ""
 
 
 def test_board_filter_sql_bj_includes_92_prefix():
     sql = stock_queries.board_filter_sql("bj")
-    assert "92%" in sql
+    assert "92%%" in sql

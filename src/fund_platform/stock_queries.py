@@ -85,21 +85,26 @@ def normalize_stock_board(board: Optional[str]) -> Optional[str]:
 
 
 def board_filter_sql(board: Optional[str], *, alias: str = "sd") -> str:
-    """SQL AND fragment for A-share board (code prefix rules)."""
+    """SQL AND fragment for A-share board (code prefix rules).
+
+    Literal % in LIKE patterns must be doubled for pymysql parameter binding.
+    """
     b = normalize_stock_board(board)
     if not b:
         return ""
     col = f"{alias}.code"
     if b == "sh":
-        return f" AND ({col} LIKE '60%' AND {col} NOT LIKE '688%' AND {col} NOT LIKE '689%')"
+        return (
+            f" AND ({col} LIKE '60%%' AND {col} NOT LIKE '688%%' AND {col} NOT LIKE '689%%')"
+        )
     if b == "kcb":
-        return f" AND ({col} LIKE '688%' OR {col} LIKE '689%')"
+        return f" AND ({col} LIKE '688%%' OR {col} LIKE '689%%')"
     if b == "sz":
-        return f" AND ({col} LIKE '00%' OR {col} LIKE '001%' OR {col} LIKE '002%')"
+        return f" AND ({col} LIKE '00%%' OR {col} LIKE '001%%' OR {col} LIKE '002%%')"
     if b == "cyb":
-        return f" AND {col} LIKE '30%'"
+        return f" AND {col} LIKE '30%%'"
     if b == "bj":
-        return f" AND ({col} LIKE '4%' OR {col} LIKE '8%' OR {col} LIKE '92%')"
+        return f" AND ({col} LIKE '4%%' OR {col} LIKE '8%%' OR {col} LIKE '92%%')"
     return ""
 
 
