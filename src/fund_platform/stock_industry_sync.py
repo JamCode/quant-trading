@@ -13,7 +13,8 @@ from fund_platform.stock_industry_em import (
     industry_lookup_delay_sec,
     load_known_industry_names,
 )
-from fund_platform.stock_daily import _trade_date_today
+from fund_platform.stock_basic import update_stock_basic_industry
+from fund_platform.stock_daily import _trade_date_today, _utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,17 @@ def sync_stock_industries_daily(
     max_codes: Optional[int] = None,
 ) -> dict[str, Any]:
     """Refresh industry on stock_daily rows for ``trade_date`` (EM 个股资料)."""
-    td = trade_date or _trade_date_today()
+    from fund_platform.stock_queries import latest_stock_daily_date
+
+    td = trade_date
+    if td is None:
+        engine = get_engine()
+        raw_probe = engine.raw_connection()
+        try:
+            latest = latest_stock_daily_date(raw_probe)
+            td = date.fromisoformat(latest) if latest else _trade_date_today()
+        finally:
+            raw_probe.close()
     td_s = td.isoformat()
     if only_missing is None:
         only_missing = fp_settings.stock_industry_sync_only_missing()
@@ -123,6 +134,7 @@ def sync_stock_industries_daily(
                 )
                 if cur.rowcount:
                     mapped += 1
+                    update_stock_basic_industry(cur, code, industry, now=_utc_now_iso())
                 else:
                     skipped += 1
             except Exception as exc:  # noqa: BLE001

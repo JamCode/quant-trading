@@ -56,26 +56,45 @@ def normalize_em_industry(raw: str, known: set[str]) -> str:
     return s
 
 
-def fetch_stock_industry_em(code: str, *, known: Optional[set[str]] = None) -> Optional[str]:
+def fetch_stock_industry_em(
+    code: str,
+    *,
+    known: Optional[set[str]] = None,
+    max_attempts: int = 3,
+) -> Optional[str]:
     """Return industry label for a 6-digit A-share code, or None if unavailable."""
+    import time
+
+    import akshare as ak
+
     sym = str(code).strip().zfill(6)
     if not sym.isdigit() or len(sym) != 6:
         return None
-    import akshare as ak
-
-    df = ak.stock_individual_info_em(symbol=sym)
-    if df is None or df.empty or "item" not in df.columns:
-        return None
-    hit = df.loc[df["item"] == "行业", "value"]
-    if hit.empty:
-        return None
-    raw = str(hit.iloc[0]).strip()
-    if not raw:
-        return None
-    if known is None:
-        return raw
-    normalized = normalize_em_industry(raw, known)
-    return normalized or raw
+    last_exc: Optional[Exception] = None
+    for attempt in range(max(1, max_attempts)):
+        try:
+            df = ak.stock_individual_info_em(symbol=sym)
+            if df is None or df.empty:
+                return None
+            item_col = "item" if "item" in df.columns else df.columns[0]
+            val_col = "value" if "value" in df.columns else df.columns[-1]
+            hit = df.loc[df[item_col].astype(str) == "行业", val_col]
+            if hit.empty:
+                return None
+            raw = str(hit.iloc[0]).strip()
+            if not raw:
+                return None
+            if known is None:
+                return raw
+            normalized = normalize_em_industry(raw, known)
+            return normalized or raw
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt + 1 < max_attempts:
+                time.sleep(0.8 * (attempt + 1))
+    if last_exc:
+        logger.debug("fetch_stock_industry_em %s failed: %s", sym, last_exc)
+    return None
 
 
 def industry_lookup_delay_sec() -> float:
