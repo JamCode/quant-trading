@@ -164,6 +164,18 @@ def _safe_detail_payload(payload: Any) -> dict[str, Any]:
     return cleaned if isinstance(cleaned, dict) else {}
 
 
+def _index_holdings_for_lookup(conn, code: str, payload: dict[str, Any]) -> None:
+    hold = payload.get("holdings")
+    if not isinstance(hold, dict) or not hold.get("stocks"):
+        return
+    try:
+        from fund_platform.fund_holdings_index import upsert_fund_holdings_from_payload
+
+        upsert_fund_holdings_from_payload(conn, code.strip(), hold)
+    except Exception:  # noqa: BLE001
+        logger.warning("fund_holdings index failed for %s", code, exc_info=True)
+
+
 def ensure_fresh_detail(conn, code: str, *, force: bool = False) -> dict[str, Any]:
     ttl = detail_cache_ttl_hours()
     cached = load_cached_detail(conn, code)
@@ -171,9 +183,12 @@ def ensure_fresh_detail(conn, code: str, *, force: bool = False) -> dict[str, An
         if cache_is_fresh(cached["updated_at"], ttl):
             pl = cached["payload"]
             if isinstance(pl, dict) and "holdings" in pl:
-                return _safe_detail_payload(pl)
+                safe = _safe_detail_payload(pl)
+                _index_holdings_for_lookup(conn, code, safe)
+                return safe
     logger.info("Fetching extended detail for fund %s", code)
     bundle = fetch_detail_bundle(code.strip())
     safe = _safe_detail_payload(bundle)
     upsert_detail(conn, code.strip(), safe)
+    _index_holdings_for_lookup(conn, code, safe)
     return safe

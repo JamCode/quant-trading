@@ -1,4 +1,5 @@
 import { apiGet, escapeHtml, fmtPct, fmtYi, pctClassNum } from "../api.js";
+import { openFundDrawer } from "../components/fund-drawer.js";
 import { navigate } from "../router.js";
 import { klineChartShell, mountMarketKlineChart } from "../components/market-kline-chart.js";
 
@@ -77,6 +78,12 @@ export async function mountStockDetail(code, query) {
       <p class="meta">快照数据日 ${escapeHtml(td)}</p>
       ${snapshotGrid(snap)}
       ${chips ? `<p class="meta">所属行业</p><div class="chip-row">${chips}</div>` : ""}
+      <section class="panel" id="stock-holding-funds-panel">
+        <h2 class="view-subheading">持有该股的基金（季报）</h2>
+        <p class="meta" id="stock-holding-funds-meta">加载中…</p>
+        <div id="stock-holding-funds-body"></div>
+        <p class="meta"><a href="#" id="stock-holdings-more">在持仓反查中搜索 →</a></p>
+      </section>
       <section class="panel">
         <div class="toolbar">
           <strong>日 K</strong>
@@ -100,6 +107,57 @@ export async function mountStockDetail(code, query) {
         window.dispatchEvent(new PopStateEvent("popstate"));
       });
     });
+
+    host.querySelector("#stock-holdings-more")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      navigate("/holdings", { query: { q: name || code } });
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    const fundsMeta = host.querySelector("#stock-holding-funds-meta");
+    const fundsBody = host.querySelector("#stock-holding-funds-body");
+    apiGet("/fund-holdings/search", { q: code, limit: 30 })
+      .then((data) => {
+        const items = data.items || [];
+        if (fundsMeta) {
+          fundsMeta.textContent =
+            items.length > 0
+              ? `共 ${data.total} 只基金（季报持仓）`
+              : "暂无 indexed 持仓，可尝试持仓反查或打开相关基金详情";
+        }
+        if (!fundsBody) {
+          return;
+        }
+        if (!items.length) {
+          fundsBody.innerHTML = "";
+          return;
+        }
+        let rows = "";
+        items.forEach((r) => {
+          rows += `<tr class="clickable" data-fund-code="${escapeHtml(r.fund_code)}">
+            <td><code>${escapeHtml(r.fund_code)}</code></td>
+            <td>${escapeHtml(r.fund_name || "")}</td>
+            <td class="num">${r.weight_pct != null ? `${Number(r.weight_pct).toFixed(2)}%` : "—"}</td>
+            <td class="meta">${escapeHtml(r.report_date || "")}</td>
+          </tr>`;
+        });
+        fundsBody.innerHTML = `<table class="data"><thead><tr>
+          <th>代码</th><th>基金</th><th class="num">占净值</th><th>报告期</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+        fundsBody.querySelectorAll("tr[data-fund-code]").forEach((tr) => {
+          tr.addEventListener("click", () => {
+            const fc = tr.getAttribute("data-fund-code");
+            if (fc) {
+              openFundDrawer({ code: fc });
+            }
+          });
+        });
+      })
+      .catch(() => {
+        if (fundsMeta) {
+          fundsMeta.textContent = "基金持仓列表加载失败";
+        }
+      });
 
     const klineHost = host.querySelector("#stock-kline-host");
 

@@ -13,6 +13,7 @@ import { mountIndexDetail } from "./views/index-detail.js";
 import { mountIndices } from "./views/indices.js";
 import { mountStockDetail } from "./views/stock-detail.js";
 import { mountStocks } from "./views/stocks.js";
+import { mountHoldingsLookup } from "./views/holdings-lookup.js";
 import { mountBacktest } from "./views/backtest.js";
 
 const NAV = [
@@ -22,6 +23,7 @@ const NAV = [
   { path: "/backtest", label: "策略回测", title: "策略回测" },
   { path: "/valuation", label: "宽基 PE", title: "宽基 PE" },
   { path: "/funds", label: "基金目录", title: "基金目录" },
+  { path: "/holdings", label: "持仓反查", title: "持仓反查" },
   { path: "/stocks", label: "A 股行情", title: "A 股行情" },
   { path: "/advisor", label: "基金 AI 助手", title: "基金 AI 助手" },
   { path: "/crawler", label: "爬虫任务", title: "爬虫任务", muted: true },
@@ -100,6 +102,8 @@ async function onRoute({ path, query }) {
     await mountValuation(query);
   } else if (normalized === "/funds") {
     await mountFunds(query);
+  } else if (normalized === "/holdings") {
+    await mountHoldingsLookup(query);
   } else if (normalized === "/stocks") {
     await mountStocks(query);
   } else if (/^\/stocks\/[0-9]{6}$/.test(normalized)) {

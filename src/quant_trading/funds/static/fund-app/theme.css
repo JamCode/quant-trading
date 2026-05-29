@@ -653,6 +653,15 @@ code {
   margin-left: 0.35rem;
 }
 
+.holdings-search-label input[type="search"] {
+  min-width: 14rem;
+}
+
+.view-subheading {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
 .view-heading {
   margin: 0.5rem 0;
   font-size: 1.25rem;

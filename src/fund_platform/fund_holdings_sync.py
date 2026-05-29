@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 from fund_platform import settings as fp_settings
 from fund_platform.db import get_engine
+from fund_platform.fund_holdings_common import row_from_em_record
 from fund_platform.holdings import _latest_quarter_label
 
 logger = logging.getLogger(__name__)
@@ -17,25 +18,6 @@ logger = logging.getLogger(__name__)
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _parse_weight_pct(value: Any) -> Optional[float]:
-    if value is None:
-        return None
-    s = str(value).strip().replace(",", "").replace("%", "")
-    if not s or s in ("-", "--", "nan"):
-        return None
-    try:
-        return round(float(s), 4)
-    except ValueError:
-        return None
-
-
-def _normalize_stock_code(value: Any) -> str:
-    s = str(value).strip()
-    if s.isdigit():
-        return s.zfill(6)
-    return s
 
 
 def list_target_fund_codes(conn) -> list[str]:
@@ -77,22 +59,9 @@ def fetch_fund_stock_holdings_em(fund_code: str) -> Optional[dict[str, Any]]:
             continue
         rows: list[dict[str, Any]] = []
         for rec in sub.to_dict("records"):
-            code = _normalize_stock_code(rec.get("股票代码", rec.get("代码", "")))
-            if not code or not code.isdigit():
-                continue
-            w = _parse_weight_pct(
-                rec.get("占净值比例")
-                or rec.get("持仓占比")
-                or rec.get("占净值比例(%)")
-            )
-            name = str(rec.get("股票名称", rec.get("名称", "")) or "").strip()
-            rows.append(
-                {
-                    "stock_code": code,
-                    "stock_name": name,
-                    "weight_pct": w,
-                }
-            )
+            parsed = row_from_em_record(rec)
+            if parsed:
+                rows.append(parsed)
         if rows:
             return {"report_date": q, "report_year": y, "stocks": rows}
     return None

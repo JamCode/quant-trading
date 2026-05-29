@@ -125,6 +125,19 @@ def stock_daily_page_delay_sec() -> float:
     return max(0.0, float(os.environ.get("STOCK_DAILY_PAGE_DELAY_SEC", "3")))
 
 
+def stock_daily_em_enrich_enabled() -> bool:
+    """Second full East Money spot scrape for PE/PB etc. (slow on ECS; default off)."""
+    return os.environ.get("STOCK_DAILY_EM_ENRICH", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def stock_daily_db_chunk_size() -> int:
+    return max(100, min(int(os.environ.get("STOCK_DAILY_DB_CHUNK", "500")), 2000))
+
+
 def stock_daily_retry_sleep_sec() -> float:
     return max(1.0, float(os.environ.get("STOCK_DAILY_RETRY_SLEEP_SEC", "8")))
 
@@ -134,11 +147,16 @@ def stock_daily_cron_hour() -> int:
 
 
 def stock_daily_cron_minute() -> int:
-    return int(os.environ.get("STOCK_DAILY_CRON_MINUTE", "0"))
+    return int(os.environ.get("STOCK_DAILY_CRON_MINUTE", "10"))
+
+
+def crawler_stale_run_hours() -> float:
+    """Mark ``running`` rows older than this as failed (startup / new run)."""
+    return max(0.5, float(os.environ.get("CRAWLER_STALE_RUN_HOURS", "6")))
 
 
 def fund_holdings_type_keywords() -> list[str]:
-    raw = os.environ.get("FUND_HOLDINGS_TYPE_KEYWORDS", "股票,混合,指数,ETF")
+    raw = os.environ.get("FUND_HOLDINGS_TYPE_KEYWORDS", "股票,混合,指数,ETF,QDII")
     return [k.strip() for k in raw.split(",") if k.strip()]
 
 

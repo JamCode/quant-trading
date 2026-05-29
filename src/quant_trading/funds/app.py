@@ -44,6 +44,7 @@ from fund_platform.stock_price_history import (
     query_stock_price_daily,
 )
 from fund_platform.peer_rank import ensure_peer_rank, query_peer_rank
+from fund_platform.fund_holdings_queries import search_funds_holding_stock
 from fund_platform.peer_same_type import (
     ensure_peer_same_type,
     query_peer_same_type,
@@ -467,6 +468,28 @@ def api_stock_price_history(
         "order": ord_norm,
         "items": items,
         "total": total,
+    }
+
+
+@app.get("/api/fund-holdings/search")
+def api_fund_holdings_search(
+    conn=Depends(get_conn),
+    q: str = Query(default="", min_length=1),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """Funds holding a stock (latest quarterly report per fund); code or name (incl. overseas)."""
+    items, total, report_hint = search_funds_holding_stock(
+        conn, q.strip(), limit=limit, offset=offset
+    )
+    return {
+        "q": q.strip(),
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "report_date_hint": report_hint,
+        "note": "季报持仓，非实时；按各基金最近报告期汇总",
     }
 
 
@@ -925,6 +948,11 @@ def api_dashboard(
 @app.get("/funds", response_class=HTMLResponse)
 def funds_catalog(request: Request):
     return _render_shell(request, page_title="基金目录")
+
+
+@app.get("/holdings", response_class=HTMLResponse)
+def holdings_lookup_page(request: Request):
+    return _render_shell(request, page_title="持仓反查")
 
 
 @app.get("/indices", response_class=HTMLResponse)
