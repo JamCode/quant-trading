@@ -629,6 +629,17 @@ code {
   font-weight: 600;
 }
 
+.fund-holdings-sub {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fund-holdings-refresh {
+  margin-left: 0.35rem;
+}
+
 .view-heading {
   margin: 0.5rem 0;
   font-size: 1.25rem;

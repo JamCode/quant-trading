@@ -1,0 +1,16 @@
+---
+description: Deploy fund web to ECS after completing changes unless user opts out
+alwaysApply: true
+---
+
+# Deploy after changes (quant-trading)
+
+When you finish implementing or fixing something in this repo that affects production (especially `src/quant_trading/funds/`, `src/fund_platform/`, `deploy/ecs/`, or static fund-app assets):
+
+1. Commit and push to `main` with a clear message (only files relevant to the change).
+2. Run `./deploy/ecs/cloud-assistant-deploy.sh` and confirm health (`curl` or script output).
+3. Briefly tell the user deploy succeeded and what was verified.
+
+**Do not skip deploy** waiting for the user to ask, unless they explicitly say not to deploy (e.g. “先别部署”, “不要部署”, “local only”).
+
+If deploy fails, diagnose (git fetch, pip, systemd logs via cloud-assistant-run) and retry or report the blocker.
