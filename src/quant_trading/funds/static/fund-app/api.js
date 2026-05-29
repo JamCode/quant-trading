@@ -31,6 +31,32 @@ export async function apiGet(path, params = {}) {
   return response.json();
 }
 
+/** Paginated fund NAV history (asc, all pages). */
+export async function fetchAllFundNavHistory(code, { pageSize = 2000 } = {}) {
+  const sym = encodeURIComponent(code);
+  const all = [];
+  let offset = 0;
+  let total = 0;
+  for (;;) {
+    const hist = await apiGet(`/funds/${sym}/nav-history`, {
+      limit: pageSize,
+      offset,
+      order: "asc",
+    });
+    total = hist.total ?? total;
+    const batch = hist.items || [];
+    if (!batch.length) {
+      break;
+    }
+    all.push(...batch);
+    offset += batch.length;
+    if (batch.length < pageSize || (total > 0 && offset >= total)) {
+      break;
+    }
+  }
+  return { items: all, total: total || all.length };
+}
+
 /** Paginated market-index daily history (asc, all pages). */
 export async function fetchAllMarketIndexHistory(code, { pageSize = 2000 } = {}) {
   const sym = encodeURIComponent(code);
