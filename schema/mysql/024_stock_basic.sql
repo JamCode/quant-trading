@@ -1,4 +1,3 @@
--- Static A-share code → name/industry (maintained by stock_daily_sync).
 USE fund_svc;
 
 CREATE TABLE IF NOT EXISTS stock_basic (
@@ -10,7 +9,6 @@ CREATE TABLE IF NOT EXISTS stock_basic (
   KEY idx_stock_basic_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Seed from latest stock_daily snapshot per code.
 INSERT INTO stock_basic (code, name, industry, updated_at)
 SELECT sd.code, sd.name, sd.industry, sd.updated_at
 FROM stock_daily sd
@@ -21,5 +19,5 @@ INNER JOIN (
 ) latest ON latest.code = sd.code AND latest.trade_date = sd.trade_date
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
-  industry = COALESCE(VALUES(industry), industry),
+  industry = COALESCE(VALUES(industry), stock_basic.industry),
   updated_at = VALUES(updated_at);
