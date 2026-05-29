@@ -15,6 +15,7 @@ import requests
 
 from fund_platform import settings as fp_settings
 from fund_platform.db import get_engine
+from fund_platform.stock_basic import upsert_stock_basic
 
 logger = logging.getLogger(__name__)
 
@@ -571,8 +572,10 @@ def sync_stock_daily(trade_date: Optional[date] = None) -> dict[str, Any]:
 
         now = _utc_now_iso()
         keep_codes = {str(r["code"]).zfill(6) for r in payload}
+        chunk = fp_settings.stock_daily_db_chunk_size()
         logger.info("stock_daily db write start trade_date=%s", td_s)
         _upsert_stock_daily(cur, td_s, payload, now=now)
+        basic_n = upsert_stock_basic(cur, payload, now=now, chunk_size=chunk)
         pruned = _prune_stock_daily_codes(cur, td_s, keep_codes)
         cur.execute(
             """
@@ -584,9 +587,10 @@ def sync_stock_daily(trade_date: Optional[date] = None) -> dict[str, Any]:
         )
         raw.commit()
         logger.info(
-            "stock_daily sync OK %s rows=%s pruned=%s source=%s",
+            "stock_daily sync OK %s rows=%s basic=%s pruned=%s source=%s",
             td_s,
             len(payload),
+            basic_n,
             pruned,
             source,
         )

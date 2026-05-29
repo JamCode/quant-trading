@@ -358,11 +358,15 @@ def query_stock_snapshot(
     cur = _cursor(conn)
     cur.execute(
         """
-        SELECT trade_date, code, name, industry, price, change_pct, float_market_cap, total_market_cap,
-               turnover_pct, amount, pe_dynamic, pb, volume_ratio, amplitude_pct,
-               change_5m_pct, speed_pct, change_60d_pct, change_ytd_pct, updated_at
-        FROM stock_daily
-        WHERE trade_date = %s AND code = %s
+        SELECT sd.trade_date, sd.code,
+               COALESCE(NULLIF(sd.name, ''), b.name, '') AS name,
+               COALESCE(NULLIF(sd.industry, ''), b.industry) AS industry,
+               sd.price, sd.change_pct, sd.float_market_cap, sd.total_market_cap,
+               sd.turnover_pct, sd.amount, sd.pe_dynamic, sd.pb, sd.volume_ratio, sd.amplitude_pct,
+               sd.change_5m_pct, sd.speed_pct, sd.change_60d_pct, sd.change_ytd_pct, sd.updated_at
+        FROM stock_daily sd
+        LEFT JOIN stock_basic b ON b.code = sd.code
+        WHERE sd.trade_date = %s AND sd.code = %s
         """,
         (td, sym),
     )
@@ -395,6 +399,17 @@ def query_stock_industries(
         LIMIT 1
         """,
         (td, sym),
+    )
+    row = cur.fetchone()
+    if row and row.get("industry"):
+        return [str(row["industry"])]
+    cur.execute(
+        """
+        SELECT industry FROM stock_basic
+        WHERE code = %s AND industry IS NOT NULL AND industry != ''
+        LIMIT 1
+        """,
+        (sym,),
     )
     row = cur.fetchone()
     if row and row.get("industry"):
@@ -455,7 +470,7 @@ def query_industry_constituents_from_db(
     cur.execute(
         """
         SELECT c.code,
-               COALESCE(sd.name, '') AS name,
+               COALESCE(NULLIF(sd.name, ''), b.name, '') AS name,
                sd.price,
                sd.change_pct,
                sd.float_market_cap,
@@ -473,6 +488,7 @@ def query_industry_constituents_from_db(
         FROM sector_industry_constituent c
         LEFT JOIN stock_daily sd
           ON sd.trade_date = %s AND sd.code = c.code
+        LEFT JOIN stock_basic b ON b.code = c.code
         WHERE c.trade_date = %s AND c.industry = %s
         ORDER BY sd.change_pct IS NULL, sd.change_pct DESC
         """,
