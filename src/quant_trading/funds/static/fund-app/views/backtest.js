@@ -47,6 +47,12 @@ function renderParamFields(host, strategy, values) {
     input.type = "number";
     input.name = `param-${spec.name}`;
     input.value = values[spec.name] ?? spec.default;
+    if (spec.type === "float") {
+      input.step = "0.1";
+      input.inputMode = "decimal";
+    } else {
+      input.step = "1";
+    }
     if (spec.min != null) {
       input.min = String(spec.min);
     }
