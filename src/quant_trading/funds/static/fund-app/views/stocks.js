@@ -162,9 +162,11 @@ export async function mountStocks(query) {
     }
 
     const filterParts = buildFilterSummary(query, meta);
+    const cov = meta.industry_coverage || {};
+    const pending = Number(cov.pending || 0);
     const industryMapHint =
-      meta.industry_filter_ready === false && (meta.industry_options || []).length
-        ? "（行业名来自资金流；按行业筛股需先跑成分股同步）"
+      pending > 0
+        ? `（行业补全中：已 ${cov.with_industry ?? 0}/${cov.total ?? 0}，每日收盘任务继续刷新）`
         : "";
     const filterHint = filterParts.length
       ? `当前：${filterParts.join(" · ")}${industryMapHint}`

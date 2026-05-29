@@ -48,35 +48,30 @@ def rebuild_stock_ths_industry_from_holdings(
     delay_sec: Optional[float] = None,
 ) -> dict[str, Any]:
     """Fallback when THS constituents blocked: map each held stock via East Money profile."""
-    import akshare as ak
+    from fund_platform.stock_industry_em import (
+        fetch_stock_industry_em,
+        industry_lookup_delay_sec,
+        load_known_industry_names,
+    )
 
     td = trade_date or _trade_date_today()
     td_s = td.isoformat()
-    pace = delay_sec if delay_sec is not None else fp_settings.em_stock_industry_delay_sec()
+    pace = delay_sec if delay_sec is not None else industry_lookup_delay_sec()
     engine = get_engine()
     raw = engine.raw_connection()
     cur = raw.cursor()
     mapped = 0
     failed = 0
     try:
-        known = _load_known_industries(cur)
+        known = load_known_industry_names(raw)
         cur.execute("SELECT DISTINCT stock_code FROM fund_holdings WHERE stock_code IS NOT NULL")
         codes = [str(r[0] if not isinstance(r, dict) else r["stock_code"]).zfill(6) for r in cur.fetchall()]
         cur.execute("DELETE FROM stock_ths_industry WHERE trade_date = %s", (td_s,))
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         for code in codes:
             if not code.isdigit() or len(code) != 6:
                 continue
             try:
-                df = ak.stock_individual_info_em(symbol=code)
-                if df is None or df.empty or "item" not in df.columns:
-                    failed += 1
-                    continue
-                hit = df.loc[df["item"] == "行业", "value"]
-                if hit.empty:
-                    failed += 1
-                    continue
-                industry = _normalize_industry(str(hit.iloc[0]), known)
+                industry = fetch_stock_industry_em(code, known=known)
                 if not industry:
                     failed += 1
                     continue
@@ -134,13 +129,24 @@ def rebuild_stock_ths_industry(trade_date: Optional[date] = None) -> dict[str, A
         cur.execute(
             """
             INSERT INTO stock_ths_industry (trade_date, code, industry)
-            SELECT DISTINCT trade_date, code, industry
-            FROM sector_industry_constituent
-            WHERE trade_date = %s
+            SELECT trade_date, code, industry
+            FROM stock_daily
+            WHERE trade_date = %s AND industry IS NOT NULL AND industry != ''
             """,
             (td_s,),
         )
-        count = cur.rowcount
+        count = int(cur.rowcount or 0)
+        if count <= 0:
+            cur.execute(
+                """
+                INSERT INTO stock_ths_industry (trade_date, code, industry)
+                SELECT DISTINCT trade_date, code, industry
+                FROM sector_industry_constituent
+                WHERE trade_date = %s
+                """,
+                (td_s,),
+            )
+            count = int(cur.rowcount or 0)
         raw.commit()
         if count <= 0:
             logger.warning("constituent map empty for %s, using EM holdings fallback", td_s)

@@ -182,6 +182,7 @@ def _fetch_spot_sina_dataframe() -> list[dict[str, Any]]:
                     "speed_pct": None,
                     "change_60d_pct": None,
                     "change_ytd_pct": None,
+                    "industry": None,
                 }
             )
 
@@ -440,6 +441,7 @@ def fetch_a_share_spot_em(*, max_attempts: int = 3) -> list[dict[str, Any]]:
                 "speed_pct": _opt_float(rec.get("涨速")),
                 "change_60d_pct": _opt_float(rec.get("60日涨跌幅")),
                 "change_ytd_pct": _opt_float(rec.get("年初至今涨跌幅")),
+                "industry": None,
             }
         )
     return rows
@@ -457,15 +459,16 @@ def count_stock_daily(conn, trade_date: date) -> int:
 
 _STOCK_DAILY_UPSERT_SQL = """
     INSERT INTO stock_daily (
-      trade_date, code, name, price, change_pct,
+      trade_date, code, name, industry, price, change_pct,
       float_market_cap, total_market_cap, turnover_pct, amount,
       pe_dynamic, pb, volume_ratio, amplitude_pct,
       change_5m_pct, speed_pct, change_60d_pct, change_ytd_pct,
       updated_at
     )
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON DUPLICATE KEY UPDATE
       name = VALUES(name),
+      industry = COALESCE(VALUES(industry), industry),
       price = VALUES(price),
       change_pct = VALUES(change_pct),
       float_market_cap = VALUES(float_market_cap),
@@ -490,6 +493,7 @@ def _stock_daily_row_params(td_s: str, payload: list[dict[str, Any]], now: str) 
             td_s,
             r["code"],
             r["name"],
+            r.get("industry"),
             r["price"],
             r["change_pct"],
             r["float_market_cap"],
@@ -586,13 +590,18 @@ def sync_stock_daily(trade_date: Optional[date] = None) -> dict[str, Any]:
             pruned,
             source,
         )
-        return {
+        out: dict[str, Any] = {
             "ok": True,
             "trade_date": td_s,
             "count": len(payload),
             "job_id": job_id,
             "source": source,
         }
+        from fund_platform.stock_industry_sync import run_after_stock_daily
+
+        ind = run_after_stock_daily(td)
+        out["industry_sync"] = ind
+        return out
     except Exception as exc:  # noqa: BLE001
         err = f"{exc}\n{traceback.format_exc()}"
         logger.exception("sync_stock_daily failed")

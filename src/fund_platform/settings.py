@@ -105,6 +105,28 @@ def em_stock_industry_delay_sec() -> float:
     return max(0.0, float(os.environ.get("EM_STOCK_INDUSTRY_DELAY_SEC", "0.35")))
 
 
+def stock_industry_sync_on_daily() -> bool:
+    """After stock_daily spot sync, fill per-stock industry via East Money."""
+    return os.environ.get("STOCK_INDUSTRY_SYNC_ON_DAILY", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
+def stock_industry_sync_only_missing() -> bool:
+    return os.environ.get("STOCK_INDUSTRY_SYNC_ONLY_MISSING", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
+def stock_industry_sync_max_per_run() -> int:
+    """Max EM lookups per scheduled run (full market needs multiple days)."""
+    return max(50, int(os.environ.get("STOCK_INDUSTRY_SYNC_MAX_PER_RUN", "1200")))
+
+
 def sector_constituent_delay_sec() -> float:
     """Pause between syncing each THS industry (~90 industries)."""
     return max(0.0, float(os.environ.get("SECTOR_CONSTITUENT_DELAY_SEC", "2.5")))

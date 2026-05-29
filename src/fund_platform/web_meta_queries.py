@@ -82,6 +82,7 @@ def stocks_catalog_meta(conn, *, trade_date: str | None = None) -> dict[str, Any
         ],
         "industry_options": stock_queries.list_stock_industry_options(conn, trade_date=td),
         "industry_filter_ready": stock_queries.industry_filter_ready(conn, trade_date=td),
+        "industry_coverage": stock_queries.stock_industry_coverage(conn, trade_date=td),
     }
 
 
