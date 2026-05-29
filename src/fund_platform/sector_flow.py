@@ -1,4 +1,4 @@
-"""Daily A-share industry sector fund flow (East Money JSON API → MySQL)."""
+"""Daily A-share industry sector fund flow (THS data.10jqka.com.cn → MySQL)."""
 
 from __future__ import annotations
 
@@ -8,67 +8,11 @@ import traceback
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
-import requests
-
 from fund_platform import settings as fp_settings
 from fund_platform.db import get_engine
 from fund_platform.units import amount_to_yi
 
 logger = logging.getLogger(__name__)
-
-# ── East Money API 行业板块参数 ──
-# 正确 fs 值：m:90+s:4（行业板块），不是 m:90+t:2
-_EM_BASE_URLS = (
-    "https://29.push2.eastmoney.com/api/qt/clist/get",
-    "https://82.push2.eastmoney.com/api/qt/clist/get",
-    "https://63.push2.eastmoney.com/api/qt/clist/get",
-    "https://48.push2.eastmoney.com/api/qt/clist/get",
-    "https://push2.eastmoney.com/api/qt/clist/get",
-)
-
-_EM_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Referer": "https://data.eastmoney.com/bkzj/hy.html",
-}
-
-
-# 各周期对应的 API 参数（来自东财网页 JavaScript）
-# st（排序字段）：1日→f62, 5日→f164, 3/10日→f174, 20日→f183
-_EM_PERIOD_CONFIG = {
-    "即时": {
-        "fields": "f2,f3,f12,f14,f62,f66,f69,f72,f78,f84,f124,f184,f204,f205",
-        "fid": "f62",
-        "change_field": "f3",
-        "net_field": "f62",
-    },
-    "3日排行": {
-        "fields": "f2,f12,f14,f124,f127,f257,f258,f267,f268,f269,f270,f271,f272,f273,f274,f275,f276",
-        "fid": "f174",
-        "change_field": "f127",
-        "net_field": "f267",
-    },
-    "5日排行": {
-        "fields": "f2,f12,f14,f109,f124,f164,f165,f166,f167,f168,f169,f170,f171,f172,f173,f257,f258",
-        "fid": "f164",
-        "change_field": "f109",
-        "net_field": "f164",
-    },
-    "10日排行": {
-        "fields": "f2,f12,f14,f124,f160,f174,f175,f176,f177,f178,f179,f180,f181,f182,f183,f260,f261",
-        "fid": "f174",
-        "change_field": "f160",
-        "net_field": "f174",
-    },
-    "20日排行": {
-        "fields": "f2,f12,f14,f124,f160,f183,f184,f185,f186,f187,f188,f189,f190,f191,f192,f193,f262,f263",
-        "fid": "f183",
-        "change_field": "f160",
-        "net_field": "f183",
-    },
-}
 
 _PERIOD_COLUMN_MAP = {
     "即时": {
@@ -105,23 +49,6 @@ def _utc_now_iso() -> str:
 
 def _trade_date_today() -> date:
     return datetime.now().date()
-
-
-def _parse_amount(value: Any) -> Optional[float]:
-    if value is None:
-        return None
-    s = str(value).strip().replace(",", "")
-    if not s or s in ("-", "--", "nan"):
-        return None
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
-def _em_amount_to_yi(value: Any) -> Optional[float]:
-    """East Money push2 fund-flow fields are yuan; DB/UI expect 亿元."""
-    return amount_to_yi(_parse_amount(value))
 
 
 def _parse_int(value: Any) -> Optional[int]:
@@ -162,92 +89,45 @@ def _normalize_row(period: str, rec: dict[str, Any]) -> Optional[dict[str, Any]]
     }
 
 
-def _em_json(period: str) -> list[dict[str, Any]]:
-    """Fetch industry fund-flow JSON from East Money (multi-host retry)."""
-    cfg = _EM_PERIOD_CONFIG.get(period)
-    if not cfg:
-        logger.warning("unsupported period %r, skipping", period)
-        return []
-
-    params = {
-        "pn": "1",
-        "pz": "500",
-        "po": "1",
-        "np": "1",
-        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
-        "fltt": "2",
-        "invt": "2",
-        "fid": cfg["fid"],
-        "fs": "m:90+s:4",
-        "fields": cfg["fields"],
-    }
+def fetch_sector_flow_ths(period: str) -> list[dict[str, Any]]:
+    """Industry sector fund flow via Tonghuashun (AkShare stock_fund_flow_industry)."""
+    import akshare as ak
 
     last_exc: Optional[Exception] = None
-    for attempt in range(8):
-        for url in _EM_BASE_URLS:
-            try:
-                r = requests.get(url, params=params, headers=_EM_HEADERS, timeout=25)
-                data = r.json()
-                items = data.get("data", {}).get("diff")
-                if items:
-                    return items
-            except Exception as exc:
-                last_exc = exc
-        time.sleep(2 * (attempt + 1))
+    retries = fp_settings.ths_retries()
+    for attempt in range(retries):
+        try:
+            df = ak.stock_fund_flow_industry(symbol=period)
+            if df is None or df.empty:
+                raise RuntimeError(f"THS returned empty dataframe for period={period!r}")
+            rows: list[dict[str, Any]] = []
+            for _, rec in df.iterrows():
+                mapped = {str(k): rec[k] for k in df.columns}
+                row = _normalize_row(period, mapped)
+                if row:
+                    rows.append(row)
+            if not rows:
+                raise RuntimeError(f"THS returned no usable rows for period={period!r}")
+            delay = fp_settings.ths_request_delay_sec()
+            if delay > 0:
+                time.sleep(delay)
+            return rows
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "THS sector flow attempt %s/%s period=%s: %s",
+                attempt + 1,
+                retries,
+                period,
+                exc,
+            )
+            if attempt + 1 < retries:
+                time.sleep(fp_settings.ths_retry_sleep_sec() * (attempt + 1))
 
-    logger.error("EM API all retries exhausted for period=%s: %s", period, last_exc)
+    logger.error("THS sector flow all retries exhausted period=%s: %s", period, last_exc)
     if last_exc:
         raise last_exc
     return []
-
-
-def _em_rec_to_dict(period: str, rec: dict[str, Any]) -> dict[str, Any]:
-    """Map one East Money record to the legacy AkShare-shaped dict for _normalize_row."""
-    cfg = _EM_PERIOD_CONFIG.get(period)
-    if not cfg:
-        return {}
-
-    net_yi = _em_amount_to_yi(rec.get(cfg["net_field"]))
-    change_val = rec.get(cfg["change_field"])
-    if change_val is not None:
-        change_val = str(round(change_val, 2))
-
-    industry_index = rec.get("f2")
-    if industry_index is not None:
-        industry_index = str(round(industry_index, 2))
-
-    leader = rec.get("f257", rec.get("f260", rec.get("f262", rec.get("f204", ""))))
-
-    return {
-        "行业": str(rec.get("f14", "")).strip(),
-        "行业指数": industry_index or "",
-        "行业-涨跌幅": str(round(rec.get("f3", 0), 2)) if period == "即时" else "",
-        "阶段涨跌幅": change_val or "",
-        "净额": net_yi,
-        "流入资金": net_yi if net_yi is not None and net_yi > 0 else 0,
-        "流出资金": abs(net_yi) if net_yi is not None and net_yi < 0 else 0,
-        "领涨股": str(leader).strip(),
-        "领涨股-涨跌幅": str(round(rec.get("f69", 0), 2)) if period == "即时" else "",
-        "当前价": str(rec.get("f2", "")) if period == "即时" else "",
-        "公司家数": None,
-    }
-
-
-def fetch_sector_flow_em(period: str) -> list[dict[str, Any]]:
-    """Industry sector fund flow via East Money JSON API."""
-    raw_items = _em_json(period)
-    if not raw_items:
-        return []
-
-    rows: list[dict[str, Any]] = []
-    for rec in raw_items:
-        mapped = _em_rec_to_dict(period, rec)
-        if not mapped.get("行业"):
-            continue
-        row = _normalize_row(period, mapped)
-        if row:
-            rows.append(row)
-    return rows
 
 
 def sync_sector_fund_flow_for_period(
@@ -267,7 +147,7 @@ def sync_sector_fund_flow_for_period(
         )
         job_id = cur.lastrowid
 
-        raw_rows = fetch_sector_flow_em(period)
+        raw_rows = fetch_sector_flow_ths(period)
         by_industry: dict[str, dict[str, Any]] = {}
         for row in raw_rows:
             by_industry[row["industry"]] = row
@@ -355,6 +235,7 @@ def sync_sector_fund_flow_daily(trade_date: Optional[date] = None) -> dict[str, 
             "trade_date": td.isoformat(),
             "periods": results,
             "total_rows": total,
+            "source": "ths",
         }
     except Exception as exc:  # noqa: BLE001
         logger.exception("sync_sector_fund_flow_daily failed")

@@ -31,7 +31,6 @@ _REMOVED_TASK_KEYS: tuple[str, ...] = (
     "fund_mysql_startup_sync",
     "stock_daily_startup",
     "sector_fund_flow_startup",
-    "sector_fund_flow_daily",
     "market_index_intraday",
     "fund_holdings_startup",
     "market_index_startup",
@@ -60,6 +59,11 @@ def _schedule_summary(task_key: str) -> str:
         return (
             f"每天 {fp_settings.stock_daily_cron_hour():02d}:"
             f"{fp_settings.stock_daily_cron_minute():02d}"
+        )
+    if task_key == "sector_fund_flow_daily":
+        return (
+            f"每天 {fp_settings.sector_flow_cron_hour():02d}:"
+            f"{fp_settings.sector_flow_cron_minute():02d}（同花顺）"
         )
     if task_key == "fund_holdings_pipeline":
         dow = fp_settings.fund_holdings_cron_day_of_week()
@@ -143,6 +147,7 @@ def _all_task_keys() -> tuple[str, ...]:
     return (
         "fund_mysql_daily_sync",
         "stock_daily_sync",
+        "sector_fund_flow_daily",
         "fund_holdings_pipeline",
         "market_index_intraday_cn",
         "market_index_daily_cn",

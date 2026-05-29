@@ -22,6 +22,8 @@ from fund_platform.market_index import (
     sync_market_index_daily_close,
     sync_market_index_intraday_cn,
 )
+from fund_platform.sector_flow import sync_sector_fund_flow_daily
+from fund_platform.sector_market_cap import run_after_sector_flow
 from fund_platform.stock_daily import sync_stock_daily
 from fund_platform.fund_stock_popularity import sync_fund_stock_popularity
 from fund_platform.sync import sync_catalog_mysql
@@ -58,6 +60,23 @@ def _run_job() -> dict[str, Any]:
 
 def _run_stock_daily_job() -> dict[str, Any]:
     return sync_stock_daily()
+
+
+def _run_sector_fund_flow_job() -> dict[str, Any]:
+    flow = sync_sector_fund_flow_daily()
+    if not flow.get("ok"):
+        return flow
+    from datetime import date
+
+    follow = run_after_sector_flow(date.fromisoformat(str(flow["trade_date"])))
+    return {
+        "ok": bool(flow.get("ok") and follow.get("ok", True)),
+        "trade_date": flow.get("trade_date"),
+        "total_rows": flow.get("total_rows"),
+        "periods": flow.get("periods"),
+        "source": flow.get("source"),
+        "follow_up": follow,
+    }
 
 
 def _run_fund_holdings_job() -> dict[str, Any]:
@@ -127,6 +146,19 @@ def main() -> None:
         coalesce=True,
     )
     registered.add("stock_daily_sync")
+
+    scheduler.add_job(
+        _scheduled("sector_fund_flow_daily", _run_sector_fund_flow_job),
+        CronTrigger(
+            hour=fp_settings.sector_flow_cron_hour(),
+            minute=fp_settings.sector_flow_cron_minute(),
+        ),
+        id="sector_fund_flow_daily",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    registered.add("sector_fund_flow_daily")
 
     scheduler.add_job(
         _scheduled("fund_holdings_pipeline", _run_fund_holdings_job),
@@ -245,13 +277,15 @@ def main() -> None:
 
     logger.info(
         "Fund crawler running log=%s stale_closed=%s; fund %02d:%02d stock %02d:%02d "
-        "holdings %s %02d:%02d index intraday %sm index close %02d:%02d",
+        "sector %02d:%02d holdings %s %02d:%02d index intraday %sm index close %02d:%02d",
         log_file,
         closed,
         fp_settings.crawler_cron_hour(),
         fp_settings.crawler_cron_minute(),
         fp_settings.stock_daily_cron_hour(),
         fp_settings.stock_daily_cron_minute(),
+        fp_settings.sector_flow_cron_hour(),
+        fp_settings.sector_flow_cron_minute(),
         fp_settings.fund_holdings_cron_day_of_week(),
         fp_settings.fund_holdings_cron_hour(),
         fp_settings.fund_holdings_cron_minute(),
