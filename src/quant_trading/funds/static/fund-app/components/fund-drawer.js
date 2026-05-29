@@ -4,7 +4,8 @@ import {
   fetchAllFundNavHistory,
   fetchAllMarketIndexHistory,
 } from "../api.js";
-import { openDrawer, setDrawerBody, setDrawerLoading } from "./drawer.js";
+import { closeDrawer, openDrawer, setDrawerBody, setDrawerLoading } from "./drawer.js";
+import { navigate } from "../router.js";
 import {
   HS300_CODE,
   mountFundNavCompareChart,
@@ -43,66 +44,92 @@ function basicHtml(ext) {
   return section("基金档案", `<dl class="fund-dl">${rows}</dl>`);
 }
 
-function holdingsTable(rows, { maxRows = 80 } = {}) {
+const STOCK_HOLDING_COLS = ["股票代码", "股票名称", "占净值比例", "持仓市值", "持股数"];
+
+function holdingsTable(rows, columns, { maxRows = 80 } = {}) {
   if (!rows?.length) {
     return "";
   }
-  const keys = Object.keys(rows[0]);
+  const keys = columns?.length ? columns.filter((k) => k in rows[0]) : Object.keys(rows[0]);
+  if (!keys.length) {
+    return "";
+  }
   const head = keys.map((k) => `<th>${escapeHtml(k)}</th>`).join("");
   let body = "";
   rows.slice(0, maxRows).forEach((row) => {
-    body += `<tr>${keys.map((k) => `<td>${escapeHtml(row[k] ?? "—")}</td>`).join("")}</tr>`;
+    body += "<tr>";
+    keys.forEach((k) => {
+      if (k === "股票代码") {
+        body += `<td>${stockCodeCell(row[k])}</td>`;
+      } else {
+        body += `<td>${escapeHtml(row[k] ?? "—")}</td>`;
+      }
+    });
+    body += "</tr>";
   });
   const more =
     rows.length > maxRows
       ? `<p class="meta">仅展示前 ${maxRows} 条，共 ${rows.length} 条。</p>`
       : "";
-  return `<div class="drawer-scroll"><table class="data"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
+  return `<div class="drawer-scroll fund-holdings-table-wrap"><table class="data fund-holdings-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
+}
+
+function stockCodeCell(raw) {
+  const code = String(raw ?? "").trim();
+  if (!code) {
+    return "—";
+  }
+  if (/^\d{6}$/.test(code)) {
+    return `<a href="#" class="stock-code-link" data-code="${escapeHtml(code)}"><code>${escapeHtml(code)}</code></a>`;
+  }
+  return `<code>${escapeHtml(code)}</code>`;
 }
 
 function holdingsHtml(ext, code) {
   const h = ext?.holdings;
-  if (!h || typeof h !== "object") {
-    return "";
+  const hasHoldings = h && typeof h === "object";
+
+  let inner = `<p class="meta">季报披露持仓（非实时）。缓存约 24 小时。
+      <a href="#" class="fund-holdings-refresh" data-code="${escapeHtml(code)}">强制刷新</a></p>`;
+
+  if (!hasHoldings) {
+    inner += '<p class="meta">尚未加载持仓，请点「强制刷新」或稍后重试。</p>';
+    return section("重仓标的", inner);
   }
 
-  let html = section(
-    "持仓与配置",
-    `<p class="meta">来源：雪球资产配置 + 东方财富季报披露（非实时盘口）。打开抽屉时按需拉取并缓存约 24 小时。
-      <a href="#" class="fund-holdings-refresh" data-code="${escapeHtml(code)}">强制刷新持仓</a></p>`
-  );
-
   if (h.warnings?.length) {
-    html += `<ul class="meta">${h.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>`;
+    inner += `<ul class="meta fund-holdings-warn">${h.warnings
+      .map((w) => `<li>${escapeHtml(w)}</li>`)
+      .join("")}</ul>`;
+  }
+
+  if (h.stocks?.length) {
+    const meta = h.stock_quarter
+      ? `报告期 ${h.stock_quarter}${h.stock_year_used ? ` · ${h.stock_year_used} 年` : ""} · 共 ${h.stocks.length} 只`
+      : `共 ${h.stocks.length} 只`;
+    inner += `<p class="meta fund-holdings-period">${escapeHtml(meta)}</p>`;
+    inner += holdingsTable(h.stocks, STOCK_HOLDING_COLS);
+  } else {
+    inner +=
+      '<p class="meta">本季未披露股票明细（货币/纯债等），见下方资产配置。</p>';
   }
 
   if (h.asset_mix?.length) {
-    html += `<h3 class="fund-holdings-sub">资产配置（雪球）</h3>${holdingsTable(h.asset_mix)}`;
-  } else {
-    html += '<p class="meta">暂无资产配置拆分。</p>';
+    inner += `<h3 class="fund-holdings-sub">资产配置（雪球）</h3>${holdingsTable(h.asset_mix)}`;
   }
 
-  html += '<h3 class="fund-holdings-sub">股票投资明细（季报）</h3>';
-  if (h.stocks?.length) {
-    const meta = h.stock_quarter
-      ? `报告期 ${h.stock_quarter}${h.stock_year_used ? ` · 数据年 ${h.stock_year_used}` : ""}`
-      : "";
-    html += `<p class="meta">${escapeHtml(meta)}</p>${holdingsTable(h.stocks)}`;
-  } else {
-    html += '<p class="meta">暂无股票季报持仓（货币型、纯债、QDII 等可能不披露 A 股明细）。</p>';
-  }
-
-  html += '<h3 class="fund-holdings-sub">债券投资明细（季报）</h3>';
   if (h.bonds?.length) {
     const meta = h.bond_quarter
-      ? `报告期 ${h.bond_quarter}${h.bond_year_used ? ` · 数据年 ${h.bond_year_used}` : ""}`
+      ? `债券报告期 ${h.bond_quarter}${h.bond_year_used ? ` · ${h.bond_year_used} 年` : ""}`
       : "";
-    html += `<p class="meta">${escapeHtml(meta)}</p>${holdingsTable(h.bonds)}`;
-  } else {
-    html += '<p class="meta">暂无债券季报持仓。</p>';
+    inner += `<h3 class="fund-holdings-sub">债券持仓（季报）</h3>`;
+    if (meta) {
+      inner += `<p class="meta">${escapeHtml(meta)}</p>`;
+    }
+    inner += holdingsTable(h.bonds);
   }
 
-  return html;
+  return section("重仓标的", inner);
 }
 
 function renderFundBody(fund, ext) {
@@ -121,6 +148,8 @@ function renderFundBody(fund, ext) {
     </dl>`
   );
 
+  html += holdingsHtml(ext, fund.code || "");
+
   html += section(
     "历史净值",
     `<p class="meta" id="fund-nav-load-meta">加载走势与沪深300对比…</p>
@@ -128,9 +157,22 @@ function renderFundBody(fund, ext) {
   );
 
   html += basicHtml(ext);
-  html += holdingsHtml(ext, fund.code || "");
 
   return html;
+}
+
+function bindStockCodeLinks() {
+  document.querySelectorAll("#drawer-body .stock-code-link").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      const sym = link.getAttribute("data-code");
+      if (sym) {
+        closeDrawer();
+        navigate(`/stocks/${sym}`, { query: {} });
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
+    });
+  });
 }
 
 function bindHoldingsRefresh(code) {
@@ -212,6 +254,7 @@ export async function openFundDrawer({ code, refresh = false }) {
     document.getElementById("drawer-title").textContent = title;
 
     setDrawerBody(renderFundBody(fund, ext));
+    bindStockCodeLinks();
     bindHoldingsRefresh(code);
     const chart = await mountNavCompareSection(code, fund.short_name || code);
     chartDispose = chart.dispose;

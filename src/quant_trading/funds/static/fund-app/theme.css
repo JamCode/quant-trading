@@ -440,6 +440,19 @@ table.pe-table td.empty {
   border-radius: 8px;
 }
 
+.fund-holdings-table-wrap {
+  max-height: 320px;
+}
+
+.fund-holdings-table code {
+  font-size: 0.85em;
+}
+
+.fund-holdings-period {
+  font-weight: 500;
+  color: var(--text);
+}
+
 .stats {
   display: flex;
   flex-wrap: wrap;
