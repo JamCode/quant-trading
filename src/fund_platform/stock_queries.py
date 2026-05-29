@@ -77,6 +77,27 @@ def latest_stock_daily_date(conn) -> Optional[str]:
     return d.isoformat() if isinstance(d, date) else str(d)
 
 
+def effective_stock_daily_date(conn, *, on_or_before: str) -> Optional[str]:
+    """Latest stock_daily row on or before ``on_or_before`` (for quote joins)."""
+    cap = (on_or_before or "").strip()[:10]
+    if not cap:
+        return latest_stock_daily_date(conn)
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT MAX(trade_date) AS d
+        FROM stock_daily
+        WHERE trade_date <= %s
+        """,
+        (cap,),
+    )
+    row = cur.fetchone()
+    if not row or not row.get("d"):
+        return None
+    d = row["d"]
+    return d.isoformat()[:10] if hasattr(d, "isoformat") else str(d)[:10]
+
+
 def normalize_stock_board(board: Optional[str]) -> Optional[str]:
     if not board or not str(board).strip():
         return None
@@ -109,18 +130,47 @@ def board_filter_sql(board: Optional[str], *, alias: str = "sd") -> str:
 
 
 def industry_filter_ready(conn, *, trade_date: Optional[str] = None) -> bool:
-    """True when code↔industry mapping exists for filtering the stock list."""
+    """True when stock_daily has industry filled for the trade date."""
     td = trade_date or latest_stock_daily_date(conn)
     if not td:
         return False
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT 1 AS ok FROM stock_daily
+        WHERE trade_date = %s AND industry IS NOT NULL AND industry != ''
+        LIMIT 1
+        """,
+        (td,),
+    )
+    if cur.fetchone():
+        return True
     if latest_sector_constituent_date(conn, on_or_before=td):
         return True
-    cur = _cursor(conn)
     cur.execute(
         "SELECT 1 AS ok FROM stock_ths_industry WHERE trade_date = %s LIMIT 1",
         (td,),
     )
     return cur.fetchone() is not None
+
+
+def stock_industry_coverage(conn, *, trade_date: Optional[str] = None) -> dict[str, int]:
+    td = trade_date or latest_stock_daily_date(conn)
+    if not td:
+        return {"total": 0, "with_industry": 0, "pending": 0}
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT COUNT(*) AS total,
+               SUM(industry IS NOT NULL AND industry != '') AS with_ind
+        FROM stock_daily WHERE trade_date = %s
+        """,
+        (td,),
+    )
+    row = cur.fetchone() or {}
+    total = int(row.get("total") or 0)
+    with_ind = int(row.get("with_ind") or 0)
+    return {"total": total, "with_industry": with_ind, "pending": max(0, total - with_ind)}
 
 
 def _distinct_industries(
@@ -149,12 +199,15 @@ def list_stock_industry_options(
     trade_date: Optional[str] = None,
     limit: int = 500,
 ) -> list[str]:
-    """Industry names for UI: constituent map, then sti, then sector fund-flow."""
+    """Industry names for UI: stock_daily.industry first, then legacy tables."""
     td = trade_date or latest_stock_daily_date(conn)
     if not td:
         return []
     lim = max(1, min(limit, 1000))
     cur = _cursor(conn)
+    out = _distinct_industries(cur, "stock_daily", trade_date=td, limit=lim)
+    if out:
+        return out
     cd = latest_sector_constituent_date(conn, on_or_before=td)
     if cd:
         out = _distinct_industries(cur, "sector_industry_constituent", trade_date=cd, limit=lim)
@@ -185,6 +238,17 @@ def _industry_filter_sql(
     ind = industry.strip()
     if not ind:
         return "", []
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT 1 AS ok FROM stock_daily
+        WHERE trade_date = %s AND industry IS NOT NULL AND industry != ''
+        LIMIT 1
+        """,
+        (trade_date,),
+    )
+    if cur.fetchone():
+        return " AND sd.industry = %s", [ind]
     cd = latest_sector_constituent_date(conn, on_or_before=trade_date)
     if cd:
         return (
@@ -196,7 +260,6 @@ def _industry_filter_sql(
         """,
             [cd, ind],
         )
-    cur = _cursor(conn)
     cur.execute(
         "SELECT 1 AS ok FROM stock_ths_industry WHERE trade_date = %s LIMIT 1",
         (trade_date,),
@@ -295,7 +358,7 @@ def query_stock_snapshot(
     cur = _cursor(conn)
     cur.execute(
         """
-        SELECT trade_date, code, name, price, change_pct, float_market_cap, total_market_cap,
+        SELECT trade_date, code, name, industry, price, change_pct, float_market_cap, total_market_cap,
                turnover_pct, amount, pe_dynamic, pb, volume_ratio, amplitude_pct,
                change_5m_pct, speed_pct, change_60d_pct, change_ytd_pct, updated_at
         FROM stock_daily
@@ -324,6 +387,18 @@ def query_stock_industries(
     if not td:
         return []
     cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT industry FROM stock_daily
+        WHERE trade_date = %s AND code = %s
+          AND industry IS NOT NULL AND industry != ''
+        LIMIT 1
+        """,
+        (td, sym),
+    )
+    row = cur.fetchone()
+    if row and row.get("industry"):
+        return [str(row["industry"])]
     cur.execute(
         """
         SELECT DISTINCT industry
@@ -368,8 +443,11 @@ def query_industry_constituents_from_db(
     trade_date: str,
 ) -> Optional[dict[str, Any]]:
     """Constituent codes from latest DB snapshot; quotes from ``trade_date`` stock_daily."""
-    quote_date = trade_date.strip()
-    constituent_date = latest_sector_constituent_date(conn, on_or_before=quote_date)
+    requested_date = trade_date.strip()
+    quote_date = effective_stock_daily_date(conn, on_or_before=requested_date)
+    if not quote_date:
+        return None
+    constituent_date = latest_sector_constituent_date(conn, on_or_before=requested_date)
     if not constituent_date:
         return None
 
@@ -441,7 +519,8 @@ def query_industry_constituents_from_db(
         )
     return {
         "industry": industry,
-        "trade_date": quote_date,
+        "trade_date": requested_date,
+        "quote_date": quote_date,
         "constituent_date": constituent_date,
         "count": len(items),
         "items": items,

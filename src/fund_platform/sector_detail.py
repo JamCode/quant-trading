@@ -57,6 +57,7 @@ def load_sector_constituents_bundle(
             "industry": industry,
             "trade_date": lookup_date,
             "constituent_date": bundle.get("constituent_date"),
+            "quote_date": bundle.get("quote_date"),
             "items": items,
             "count": len(items),
             "data_source": "db",
@@ -94,6 +95,7 @@ def load_sector_detail_bundle(
     data_source = ""
     alias_note: Optional[str] = None
     constituent_date: Optional[str] = None
+    quote_date: Optional[str] = None
     fetch_error = ""
     bundle = None
     if lookup_date:
@@ -103,6 +105,7 @@ def load_sector_detail_bundle(
         data_source = "db"
         alias_note = bundle.get("alias_note")
         constituent_date = bundle.get("constituent_date")
+        quote_date = bundle.get("quote_date")
     elif lookup_date:
         fetch_error = _NO_CONSTITUENTS_MSG
     if constituents:
@@ -129,6 +132,7 @@ def load_sector_detail_bundle(
         "constituents": constituents,
         "constituents_pending": False,
         "constituent_date": constituent_date,
+        "quote_date": quote_date,
         "fetch_error": fetch_error,
         "data_source": data_source,
         "lookup_date": lookup_date,

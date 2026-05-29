@@ -71,7 +71,7 @@ function constituentsRowsHtml(rows) {
     .map(
       (r) => `<tr>
         <td><a href="#" class="stock-code-link" data-code="${escapeHtml(r.code)}"><code>${escapeHtml(r.code)}</code></a></td>
-        <td>${escapeHtml(r.name || "")}</td>
+        <td>${escapeHtml(r.name || "—")}</td>
         <td class="num ${pctClassNum(r.change_pct)}">${fmtPct(r.change_pct)}</td>
         <td class="num">${fmtYi(r.float_market_cap)}</td>
       </tr>`
@@ -101,6 +101,9 @@ function renderSectorBody(data) {
   let html = `<p class="meta">截止 <strong>${escapeHtml(data.trade_date || "—")}</strong> · 区间 <strong>${escapeHtml(data.period)}</strong>`;
   if (data.constituent_date && data.constituent_date !== data.trade_date) {
     html += ` · 成分股索引日 ${escapeHtml(data.constituent_date)}`;
+  }
+  if (data.quote_date && data.quote_date !== data.trade_date) {
+    html += ` · 行情日 ${escapeHtml(data.quote_date)}`;
   }
   if (data.alias_note) {
     html += ` · ${escapeHtml(data.alias_note)}`;
