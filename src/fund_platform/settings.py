@@ -194,6 +194,11 @@ def fund_stock_popularity_min_funds() -> int:
     return max(2, int(os.environ.get("FUND_STOCK_POPULARITY_MIN_FUNDS", "3")))
 
 
+def fund_stock_popularity_global_min_funds() -> int:
+    """Lower bar for overseas tickers (fewer QDII funds)."""
+    return max(2, int(os.environ.get("FUND_STOCK_POPULARITY_GLOBAL_MIN_FUNDS", "2")))
+
+
 def fund_metrics_delay_sec() -> float:
     return max(0.0, float(os.environ.get("FUND_METRICS_DELAY_SEC", "0.6")))
 

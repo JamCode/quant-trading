@@ -15,12 +15,12 @@ function fmtWeight(v) {
   return `${n.toFixed(2)}%`;
 }
 
-function renderPopularSection(items, updatedAt) {
+function renderPopularBlock(title, items, emptyHint) {
   if (!items?.length) {
-    return `<section class="panel" id="holdings-popular-panel">
-      <h2 class="view-subheading">基金重仓股（持有基金数 Top）</h2>
-      <p class="meta">暂无统计，请等待每日任务 <code>fund_stock_popularity_daily</code> 运行。</p>
-    </section>`;
+    return `<div class="holdings-popular-block">
+      <h3 class="fund-holdings-sub">${escapeHtml(title)}</h3>
+      <p class="meta">${escapeHtml(emptyHint)}</p>
+    </div>`;
   }
   let chips = "";
   items.forEach((r) => {
@@ -28,11 +28,29 @@ function renderPopularSection(items, updatedAt) {
     const q = r.stock_name || r.stock_code;
     chips += `<button type="button" class="chip holdings-popular-chip" data-q="${escapeHtml(q)}" title="代码 ${escapeHtml(r.stock_code)}">${escapeHtml(label)}</button>`;
   });
-  const ts = updatedAt ? `统计于 ${escapeHtml(updatedAt)}` : "";
-  return `<section class="panel" id="holdings-popular-panel">
-    <h2 class="view-subheading">基金重仓股（持有基金数 Top）</h2>
-    <p class="meta">季报持仓汇总 · ${ts} · 点击标签反查持有基金</p>
+  return `<div class="holdings-popular-block">
+    <h3 class="fund-holdings-sub">${escapeHtml(title)}</h3>
     <div class="chip-group holdings-popular-chips">${chips}</div>
+  </div>`;
+}
+
+function renderPopularSection(cnItems, globalItems, updatedAt) {
+  const ts = updatedAt ? `统计于 ${escapeHtml(updatedAt)}` : "";
+  const cn = renderPopularBlock(
+    "A 股重仓（持有基金数 Top）",
+    cnItems,
+    "暂无 A 股统计"
+  );
+  const global = renderPopularBlock(
+    "海外 / 港股重仓（持有基金数 Top）",
+    globalItems,
+    "暂无海外标的统计（QDII 持仓较少，可先搜 NVDA、台积电、腾讯控股）"
+  );
+  return `<section class="panel" id="holdings-popular-panel">
+    <h2 class="view-subheading">基金重仓股排行</h2>
+    <p class="meta">季报持仓汇总 · ${ts} · 分市场展示，避免海外股被 A 股数量淹没 · 点击标签反查基金</p>
+    ${cn}
+    ${global}
   </section>`;
 }
 
@@ -116,12 +134,20 @@ export async function mountHoldingsLookup(query) {
   });
 
   const popularHost = host.querySelector("#holdings-popular-host");
-  apiGet("/fund-holdings/popular", { limit: 40 })
-    .then((data) => {
+  Promise.all([
+    apiGet("/fund-holdings/popular", { market: "cn", limit: 30 }),
+    apiGet("/fund-holdings/popular", { market: "global", limit: 30 }),
+  ])
+    .then(([cnData, globalData]) => {
       if (popularHost) {
-        popularHost.innerHTML = renderPopularSection(data.items || [], data.updated_at);
+        popularHost.innerHTML = renderPopularSection(
+          cnData.items || [],
+          globalData.items || [],
+          cnData.updated_at || globalData.updated_at
+        );
         bindPopularChips(host);
       }
+      const data = cnData;
       const el = host.querySelector("#holdings-index-count");
       const syncEl = host.querySelector("#holdings-index-sync");
       if (el && data.funds_indexed != null) {

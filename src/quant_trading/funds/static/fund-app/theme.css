@@ -672,6 +672,14 @@ code {
   min-width: 14rem;
 }
 
+.holdings-popular-block {
+  margin-top: 0.75rem;
+}
+
+.holdings-popular-block:first-of-type {
+  margin-top: 0.35rem;
+}
+
 .holdings-popular-chips {
   margin-top: 0.35rem;
 }

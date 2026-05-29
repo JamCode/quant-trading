@@ -492,11 +492,16 @@ def api_fund_holdings_popular(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     min_funds: int = Query(default=0, ge=0),
+    market: str = Query(default="all", description="cn=A股6位, global=海外/港股代码, all=全部"),
 ):
     """Stocks held by many funds (latest quarterly holdings aggregate)."""
     min_fc = min_funds if min_funds > 0 else None
-    items, total, updated_at = query_popular_stocks(
-        conn, limit=limit, offset=offset, min_fund_count=min_fc
+    items, total, updated_at, market_norm = query_popular_stocks(
+        conn,
+        limit=limit,
+        offset=offset,
+        min_fund_count=min_fc,
+        market=market,
     )
     meta = holdings_index_meta(conn)
     return {
@@ -504,6 +509,7 @@ def api_fund_holdings_popular(
         "total": total,
         "limit": limit,
         "offset": offset,
+        "market": market_norm,
         "updated_at": updated_at,
         "note": "按持有基金数量降序；数据来自 fund_holdings 最近一季",
         **meta,

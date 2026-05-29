@@ -96,30 +96,55 @@ def sync_fund_stock_popularity() -> dict[str, Any]:
         raw.close()
 
 
+def _market_clause(market: str) -> tuple[str, str]:
+    """Return (SQL AND fragment, market label). market: cn | global | all."""
+    m = (market or "all").strip().lower()
+    if m == "cn":
+        return "AND stock_code REGEXP '^[0-9]{6}$'", "cn"
+    if m == "global":
+        return (
+            "AND (stock_code REGEXP '[A-Za-z]' OR stock_code NOT REGEXP '^[0-9]{6}$')",
+            "global",
+        )
+    return "", "all"
+
+
+def _default_min_funds(market_norm: str, min_fund_count: Optional[int]) -> int:
+    if min_fund_count is not None and min_fund_count > 0:
+        return max(1, int(min_fund_count))
+    if market_norm == "global":
+        return fp_settings.fund_stock_popularity_global_min_funds()
+    return fp_settings.fund_stock_popularity_min_funds()
+
+
 def query_popular_stocks(
     conn,
     *,
     limit: int = 50,
     offset: int = 0,
     min_fund_count: Optional[int] = None,
-) -> tuple[list[dict[str, Any]], int, Optional[str]]:
+    market: str = "all",
+) -> tuple[list[dict[str, Any]], int, Optional[str], str]:
     cur = _cursor(conn)
-    min_n = min_fund_count if min_fund_count is not None else fp_settings.fund_stock_popularity_min_funds()
-    min_n = max(1, int(min_n))
+    market_sql, market_norm = _market_clause(market)
+    min_n = _default_min_funds(market_norm, min_fund_count)
     lim = max(1, min(int(limit), 200))
     off = max(0, int(offset))
 
     cur.execute(
-        "SELECT COUNT(*) AS c FROM fund_stock_popularity WHERE fund_count >= %s",
+        f"""
+        SELECT COUNT(*) AS c FROM fund_stock_popularity
+        WHERE fund_count >= %s {market_sql}
+        """,
         (min_n,),
     )
     total = int((cur.fetchone() or {}).get("c") or 0)
 
     cur.execute(
-        """
+        f"""
         SELECT stock_code, stock_name, fund_count, avg_weight_pct, updated_at
         FROM fund_stock_popularity
-        WHERE fund_count >= %s
+        WHERE fund_count >= %s {market_sql}
         ORDER BY fund_count DESC, stock_code ASC
         LIMIT %s OFFSET %s
         """,
@@ -132,4 +157,4 @@ def query_popular_stocks(
         row = cur.fetchone()
         updated_at = row.get("t") if row else None
     updated_s = str(updated_at)[:19] if updated_at else ""
-    return items, total, updated_s
+    return items, total, updated_s, market_norm
