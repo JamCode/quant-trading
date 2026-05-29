@@ -6,8 +6,26 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
+from fund_platform.sector_constituents import normalize_industry_name, resolve_ths_industry_name
 from fund_platform.sector_flow import _normalize_row, fetch_sector_flow_ths
 from fund_platform.sector_queries import parse_cumulative_days, query_sector_flow_cumulative
+
+
+def test_normalize_industry_suffix():
+    assert normalize_industry_name("证券Ⅱ") == "证券"
+    assert normalize_industry_name("银行II") == "银行"
+    assert normalize_industry_name("白酒") == "白酒"
+
+
+def test_resolve_ths_industry_name_with_mock_map(monkeypatch):
+    monkeypatch.setattr(
+        "fund_platform.sector_constituents._industry_code_map",
+        lambda: {"证券": "881157", "白酒": "881273"},
+    )
+    resolved, note = resolve_ths_industry_name("证券Ⅱ")
+    assert resolved == "证券"
+    assert note == "证券Ⅱ → 证券"
+    assert resolve_ths_industry_name("白酒") == ("白酒", None)
 
 
 def test_parse_cumulative_days():

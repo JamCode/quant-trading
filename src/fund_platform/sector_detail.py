@@ -7,6 +7,35 @@ from typing import Any, Optional
 from fund_platform import sector_constituents, sector_queries, stock_queries
 
 
+def _constituents_from_db(
+    conn,
+    *,
+    industry: str,
+    lookup_date: str,
+) -> Optional[dict[str, Any]]:
+    bundle = stock_queries.query_industry_constituents_from_db(
+        conn,
+        industry=industry,
+        trade_date=lookup_date,
+    )
+    if bundle:
+        return bundle
+    resolved, alias_note = sector_constituents.resolve_ths_industry_name(industry)
+    if resolved != industry.strip():
+        bundle = stock_queries.query_industry_constituents_from_db(
+            conn,
+            industry=resolved,
+            trade_date=lookup_date,
+        )
+        if bundle:
+            if alias_note:
+                bundle = dict(bundle)
+                bundle["alias_note"] = alias_note
+                bundle["industry_query"] = industry.strip()
+            return bundle
+    return None
+
+
 def load_sector_detail_bundle(
     conn,
     *,
@@ -24,21 +53,20 @@ def load_sector_detail_bundle(
     constituents: list[dict[str, Any]] = []
     fetch_error = ""
     data_source = ""
+    alias_note: Optional[str] = None
     bundle = None
     if lookup_date:
-        bundle = stock_queries.query_industry_constituents_from_db(
-            conn,
-            industry=industry,
-            trade_date=lookup_date,
-        )
+        bundle = _constituents_from_db(conn, industry=industry, lookup_date=lookup_date)
     if bundle:
         constituents = bundle.get("items") or []
         data_source = "db"
+        alias_note = bundle.get("alias_note")
     else:
         try:
             bundle = sector_constituents.fetch_industry_constituents_ths(industry)
             constituents = bundle.get("items") or []
             data_source = "ths"
+            alias_note = bundle.get("alias_note")
         except ValueError as exc:
             fetch_error = str(exc)
         except Exception:
@@ -54,8 +82,13 @@ def load_sector_detail_bundle(
         trade_date=td or trade_date,
         limit=20,
     )
+    resolved, resolved_alias = sector_constituents.resolve_ths_industry_name(industry)
+    if not alias_note and resolved_alias:
+        alias_note = resolved_alias
     return {
         "industry": industry,
+        "resolved_industry": resolved if resolved != industry.strip() else None,
+        "alias_note": alias_note,
         "period": period,
         "trade_date": td or trade_date or "",
         "summary": summary,

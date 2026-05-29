@@ -69,7 +69,8 @@ export async function mountSectors(query) {
           <thead><tr>
           <th>行业</th><th class="num">净额(亿)</th><th class="num">流通市值(亿)</th><th class="num">涨跌</th><th>领涨股</th>
         </tr></thead><tbody>${rowsHtml}</tbody></table>
-      </section>`;
+      </section>
+      <p class="footnote meta">点击行业行 → 右侧抽屉：资金摘要、近几日净流入走势、成分股列表（可点代码进 A 股详情）。</p>`;
 
     host.querySelector("#sectors-form")?.addEventListener("submit", (event) => {
       event.preventDefault();

@@ -37,6 +37,31 @@ def _ths_headers() -> dict[str, str]:
 
 _industry_map_cache: Optional[dict[str, str]] = None
 
+# Fund-flow labels may append II/Ⅱ; THS thshy board list uses the base name.
+_INDUSTRY_SUFFIXES = ("II", "Ⅱ", "2")
+
+
+def normalize_industry_name(name: str) -> str:
+    s = (name or "").strip()
+    for suffix in _INDUSTRY_SUFFIXES:
+        if s.endswith(suffix) and len(s) > len(suffix):
+            return s[: -len(suffix)]
+    return s
+
+
+def resolve_ths_industry_name(name: str) -> tuple[str, Optional[str]]:
+    """Map fund-flow industry label to THS thshy board name when possible."""
+    raw = (name or "").strip()
+    if not raw:
+        return raw, None
+    code_map = _industry_code_map()
+    if raw in code_map:
+        return raw, None
+    normalized = normalize_industry_name(raw)
+    if normalized != raw and normalized in code_map:
+        return normalized, f"{raw} → {normalized}"
+    return raw, None
+
 
 def _fetch_industry_code_map_ths_web() -> dict[str, str]:
     html = _get_ths_html("http://q.10jqka.com.cn/thshy/")
@@ -227,20 +252,26 @@ def fetch_industry_constituent_codes_ths(industry: str) -> list[str]:
 def fetch_industry_constituents_ths(industry: str) -> dict[str, Any]:
     """Return constituent stocks for a THS industry name."""
     name = industry.strip()
+    resolved, alias_note = resolve_ths_industry_name(name)
     code_map = _industry_code_map()
-    if name not in code_map:
+    if resolved not in code_map:
         raise ValueError(f"未知行业：{name}")
 
     now = time.time()
-    cached = _cache.get(name)
+    cache_key = resolved
+    cached = _cache.get(cache_key)
     if (
         cached
         and now - cached[0] < _CACHE_TTL_SEC
         and "float_market_cap_sum" in cached[1]
     ):
-        return cached[1]
+        payload = dict(cached[1])
+        if alias_note:
+            payload["alias_note"] = alias_note
+            payload["industry_query"] = name
+        return payload
 
-    board_code = code_map[name]
+    board_code = code_map[resolved]
     base = f"http://q.10jqka.com.cn/thshy/detail/code/{board_code}/"
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -273,7 +304,7 @@ def fetch_industry_constituents_ths(industry: str) -> dict[str, Any]:
     cap_sum = round(sum(caps), 2) if caps else None
     missing = len(items) - len(caps)
     payload = {
-        "industry": name,
+        "industry": resolved,
         "board_code": board_code,
         "count": len(items),
         "items": items,
@@ -281,8 +312,11 @@ def fetch_industry_constituents_ths(industry: str) -> dict[str, Any]:
         "float_market_cap_missing": missing,
         "source": "ths",
     }
-    _cache[name] = (now, payload)
-    logger.info("Fetched %s constituents for %s", len(items), name)
+    if alias_note:
+        payload["alias_note"] = alias_note
+        payload["industry_query"] = name
+    _cache[cache_key] = (now, payload)
+    logger.info("Fetched %s constituents for %s (resolved=%s)", len(items), name, resolved)
     return payload
 
 

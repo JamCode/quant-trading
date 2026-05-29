@@ -67,34 +67,46 @@ function renderSectorBody(data) {
   const summary = data.summary || {};
   const rows = data.constituents || [];
   const history = data.flow_history || [];
-  let html = `<p class="meta">数据日 <strong>${escapeHtml(data.trade_date || "—")}</strong> · 区间 <strong>${escapeHtml(data.period)}</strong>`;
+  let html = `<p class="meta">截止 <strong>${escapeHtml(data.trade_date || "—")}</strong> · 区间 <strong>${escapeHtml(data.period)}</strong>`;
+  if (data.alias_note) {
+    html += ` · ${escapeHtml(data.alias_note)}`;
+  }
   if (data.data_source) {
-    html += ` · 成分来源 ${escapeHtml(data.data_source)}`;
+    html += ` · 成分股 ${escapeHtml(data.data_source === "db" ? "库内" : "同花顺实时")}`;
   }
   html += "</p>";
+
   if (data.fetch_error) {
     html += `<div class="banner-error">${escapeHtml(data.fetch_error)}</div>`;
   }
+
   if (summary && Object.keys(summary).length) {
     html += `<div class="stats">
       <span>净流入 <strong class="${pctClassNum(summary.net_amt)}">${fmtYi(summary.net_amt)}</strong> 亿</span>
+      <span>流入 <strong>${fmtYi(summary.inflow_amt)}</strong> 亿</span>
+      <span>流出 <strong>${fmtYi(summary.outflow_amt)}</strong> 亿</span>
       <span>涨跌 <strong>${escapeHtml(summary.change_pct || "—")}</strong></span>
       <span>流通市值 <strong>${fmtYi(summary.float_market_cap)}</strong> 亿</span>
     </div>`;
+  } else {
+    html += '<p class="meta">该区间暂无资金摘要（可能未入库或行业名不匹配）。</p>';
   }
+
   if (history.length) {
     html += `<section class="panel sector-flow-history">
-      <h3 class="sub">近 ${history.length} 日净流入（即时）</h3>
+      <h3 class="sub">近 ${history.length} 日净流入（库内每日「即时」快照）</h3>
       <div class="chart-wrap" style="height:200px"><div id="sector-flow-history-chart" class="fund-nav-compare-chart"></div></div>
     </section>`;
   }
+
+  html += `<section class="panel"><h3 class="sub">成分股（${rows.length} 只）</h3>`;
   html += `<table class="data"><colgroup>
     <col style="width:16%" /><col style="width:38%" /><col style="width:18%" /><col style="width:28%" />
   </colgroup><thead><tr>
     <th>代码</th><th>名称</th><th class="num">涨跌幅</th><th class="num">流通市值(亿)</th>
   </tr></thead><tbody>`;
   if (!rows.length) {
-    html += '<tr><td colspan="4">暂无成分股</td></tr>';
+    html += `<tr><td colspan="4">暂无成分股${data.fetch_error ? "（见上方错误）" : "（需先同步行业成分股）"}</td></tr>`;
   } else {
     rows.forEach((r) => {
       html += `<tr>
@@ -105,12 +117,14 @@ function renderSectorBody(data) {
       </tr>`;
     });
   }
-  html += "</tbody></table>";
+  html += "</tbody></table></section>";
+  html +=
+    '<p class="footnote meta">详情为右侧抽屉，非独立页面。资金来自同花顺行业资金流；成分股来自同花顺 thshy；行情/市值来自全 A 日表。</p>';
   return html;
 }
 
 export async function openSectorDrawer({ industry, period, trade_date }) {
-  openDrawer({ title: industry, html: "" });
+  openDrawer({ title: industry, html: "", wide: true });
   setDrawerLoading();
   let disposeChart = null;
   try {
