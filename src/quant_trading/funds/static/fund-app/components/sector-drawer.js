@@ -63,16 +63,47 @@ function renderFlowHistory(host, points) {
   return () => host._flowChartCleanup?.();
 }
 
+function constituentsRowsHtml(rows) {
+  if (!rows?.length) {
+    return "";
+  }
+  return rows
+    .map(
+      (r) => `<tr>
+        <td><a href="#" class="stock-code-link" data-code="${escapeHtml(r.code)}"><code>${escapeHtml(r.code)}</code></a></td>
+        <td>${escapeHtml(r.name || "")}</td>
+        <td class="num ${pctClassNum(r.change_pct)}">${fmtPct(r.change_pct)}</td>
+        <td class="num">${fmtYi(r.float_market_cap)}</td>
+      </tr>`
+    )
+    .join("");
+}
+
+function bindStockLinks(root) {
+  root.querySelectorAll(".stock-code-link").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      const sym = link.getAttribute("data-code");
+      if (sym) {
+        closeDrawer();
+        navigate(`/stocks/${sym}`, { query: {} });
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
+    });
+  });
+}
+
 function renderSectorBody(data) {
   const summary = data.summary || {};
   const rows = data.constituents || [];
   const history = data.flow_history || [];
+  const pending = Boolean(data.constituents_pending);
   let html = `<p class="meta">截止 <strong>${escapeHtml(data.trade_date || "—")}</strong> · 区间 <strong>${escapeHtml(data.period)}</strong>`;
   if (data.alias_note) {
     html += ` · ${escapeHtml(data.alias_note)}`;
   }
   if (data.data_source) {
-    html += ` · 成分股 ${escapeHtml(data.data_source === "db" ? "库内" : "同花顺实时")}`;
+    html += ` · 成分股 ${escapeHtml(data.data_source === "db" ? "库内" : "同花顺")}`;
   }
   html += "</p>";
 
@@ -99,28 +130,52 @@ function renderSectorBody(data) {
     </section>`;
   }
 
-  html += `<section class="panel"><h3 class="sub">成分股（${rows.length} 只）</h3>`;
+  const countLabel = pending ? "加载中…" : `${rows.length} 只`;
+  html += `<section class="panel"><h3 class="sub" id="sector-constituents-title">成分股（${countLabel}）</h3>`;
   html += `<table class="data"><colgroup>
     <col style="width:16%" /><col style="width:38%" /><col style="width:18%" /><col style="width:28%" />
   </colgroup><thead><tr>
     <th>代码</th><th>名称</th><th class="num">涨跌幅</th><th class="num">流通市值(亿)</th>
-  </tr></thead><tbody>`;
-  if (!rows.length) {
-    html += `<tr><td colspan="4">暂无成分股${data.fetch_error ? "（见上方错误）" : "（需先同步行业成分股）"}</td></tr>`;
+  </tr></thead><tbody id="sector-constituents-body">`;
+  if (pending) {
+    html += '<tr><td colspan="4" class="loading">成分股加载中（首次可能需 1–2 分钟）…</td></tr>';
+  } else if (!rows.length) {
+    html += '<tr><td colspan="4">暂无成分股（需先同步行业成分股）</td></tr>';
   } else {
-    rows.forEach((r) => {
-      html += `<tr>
-        <td><a href="#" class="stock-code-link" data-code="${escapeHtml(r.code)}"><code>${escapeHtml(r.code)}</code></a></td>
-        <td>${escapeHtml(r.name || "")}</td>
-        <td class="num ${pctClassNum(r.change_pct)}">${fmtPct(r.change_pct)}</td>
-        <td class="num">${fmtYi(r.float_market_cap)}</td>
-      </tr>`;
-    });
+    html += constituentsRowsHtml(rows);
   }
   html += "</tbody></table></section>";
   html +=
-    '<p class="footnote meta">详情为右侧抽屉，非独立页面。资金来自同花顺行业资金流；成分股来自同花顺 thshy；行情/市值来自全 A 日表。</p>';
+    '<p class="footnote meta">资金来自同花顺行业资金流；成分股来自同花顺 thshy；行情/市值来自全 A 日表。</p>';
   return html;
+}
+
+async function loadConstituentsAsync(industry, tradeDate) {
+  const tbody = document.getElementById("sector-constituents-body");
+  const titleEl = document.getElementById("sector-constituents-title");
+  if (!tbody) {
+    return;
+  }
+  try {
+    const bundle = await apiGet(`/sectors/${encodeURIComponent(industry)}/constituents`, {
+      trade_date: tradeDate,
+    });
+    const rows = bundle.items || [];
+    if (bundle.fetch_error) {
+      tbody.innerHTML = `<tr><td colspan="4">${escapeHtml(bundle.fetch_error)}</td></tr>`;
+    } else if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4">暂无成分股</td></tr>';
+    } else {
+      tbody.innerHTML = constituentsRowsHtml(rows);
+      bindStockLinks(document.getElementById("drawer-body"));
+    }
+    if (titleEl) {
+      const src = bundle.data_source === "db" ? "库内" : "同花顺";
+      titleEl.textContent = `成分股（${rows.length} 只 · ${src}）`;
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="4">成分股加载失败：${escapeHtml(err.message)}</td></tr>`;
+  }
 }
 
 export async function openSectorDrawer({ industry, period, trade_date }) {
@@ -137,17 +192,10 @@ export async function openSectorDrawer({ industry, period, trade_date }) {
     if (chartHost && data.flow_history?.length) {
       disposeChart = renderFlowHistory(chartHost, data.flow_history);
     }
-    document.querySelectorAll("#drawer-body .stock-code-link").forEach((link) => {
-      link.addEventListener("click", (event) => {
-        event.preventDefault();
-        const sym = link.getAttribute("data-code");
-        if (sym) {
-          closeDrawer();
-          navigate(`/stocks/${sym}`, { query: {} });
-          window.dispatchEvent(new PopStateEvent("popstate"));
-        }
-      });
-    });
+    bindStockLinks(document.getElementById("drawer-body"));
+    if (data.constituents_pending) {
+      loadConstituentsAsync(industry, trade_date || data.trade_date);
+    }
   } catch (err) {
     setDrawerBody(`<div class="banner-error">加载失败：${escapeHtml(err.message)}</div>`);
   }

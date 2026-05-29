@@ -36,6 +36,65 @@ def _constituents_from_db(
     return None
 
 
+def load_sector_constituents_bundle(
+    conn,
+    *,
+    industry: str,
+    trade_date: Optional[str] = None,
+) -> dict[str, Any]:
+    """DB-first constituents; falls back to live THS (may take minutes on cold cache)."""
+    lookup_date = trade_date or stock_queries.latest_stock_daily_date(conn) or ""
+    alias_note: Optional[str] = None
+    bundle = _constituents_from_db(conn, industry=industry, lookup_date=lookup_date) if lookup_date else None
+    if bundle:
+        items = bundle.get("items") or []
+        return {
+            "industry": industry,
+            "trade_date": lookup_date,
+            "items": items,
+            "count": len(items),
+            "data_source": "db",
+            "alias_note": bundle.get("alias_note"),
+            "fetch_error": "",
+        }
+    try:
+        bundle = sector_constituents.fetch_industry_constituents_ths(industry)
+        items = bundle.get("items") or []
+        items = sorted(
+            items,
+            key=lambda x: (x.get("change_pct") is None, -(x.get("change_pct") or 0)),
+        )
+        return {
+            "industry": industry,
+            "trade_date": lookup_date,
+            "items": items,
+            "count": len(items),
+            "data_source": "ths",
+            "alias_note": bundle.get("alias_note"),
+            "fetch_error": "",
+        }
+    except ValueError as exc:
+        return {
+            "industry": industry,
+            "trade_date": lookup_date,
+            "items": [],
+            "count": 0,
+            "data_source": "",
+            "alias_note": alias_note,
+            "fetch_error": str(exc),
+        }
+    except Exception:
+        return {
+            "industry": industry,
+            "trade_date": lookup_date,
+            "items": [],
+            "count": 0,
+            "data_source": "",
+            "alias_note": alias_note,
+            "fetch_error": "成分股拉取失败，请稍后重试",
+        }
+
+
 def load_sector_detail_bundle(
     conn,
     *,
@@ -43,6 +102,7 @@ def load_sector_detail_bundle(
     period: str,
     trade_date: Optional[str] = None,
 ) -> dict[str, Any]:
+    """Fast drawer payload: fund summary + history; constituents from DB only."""
     summary, td = sector_queries.query_sector_industry(
         conn,
         industry=industry,
@@ -51,9 +111,9 @@ def load_sector_detail_bundle(
     )
     lookup_date = td or stock_queries.latest_stock_daily_date(conn) or ""
     constituents: list[dict[str, Any]] = []
-    fetch_error = ""
     data_source = ""
     alias_note: Optional[str] = None
+    constituents_pending = False
     bundle = None
     if lookup_date:
         bundle = _constituents_from_db(conn, industry=industry, lookup_date=lookup_date)
@@ -62,16 +122,8 @@ def load_sector_detail_bundle(
         data_source = "db"
         alias_note = bundle.get("alias_note")
     else:
-        try:
-            bundle = sector_constituents.fetch_industry_constituents_ths(industry)
-            constituents = bundle.get("items") or []
-            data_source = "ths"
-            alias_note = bundle.get("alias_note")
-        except ValueError as exc:
-            fetch_error = str(exc)
-        except Exception:
-            fetch_error = "成分股拉取失败，请稍后重试"
-    if not fetch_error:
+        constituents_pending = True
+    if constituents:
         constituents = sorted(
             constituents,
             key=lambda x: (x.get("change_pct") is None, -(x.get("change_pct") or 0)),
@@ -93,7 +145,8 @@ def load_sector_detail_bundle(
         "trade_date": td or trade_date or "",
         "summary": summary,
         "constituents": constituents,
-        "fetch_error": fetch_error,
+        "constituents_pending": constituents_pending,
+        "fetch_error": "",
         "data_source": data_source,
         "lookup_date": lookup_date,
         "flow_history": flow_history,

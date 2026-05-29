@@ -32,7 +32,7 @@ from fund_platform import stock_queries
 from fund_platform import settings as fp_settings
 from fund_platform import web_meta_queries
 from fund_platform.db import get_engine
-from fund_platform.sector_detail import load_sector_detail_bundle
+from fund_platform.sector_detail import load_sector_constituents_bundle, load_sector_detail_bundle
 from fund_platform.detail import ensure_fresh_detail
 from fund_platform.market_index import align_index_closes_to_dates, query_index_daily_closes
 from fund_platform.nav_history import ensure_nav_history, query_nav_history
@@ -780,21 +780,7 @@ def api_sector_constituents(
     conn=Depends(get_conn),
     trade_date: Optional[str] = Query(default=None),
 ):
-    td = trade_date or stock_queries.latest_stock_daily_date(conn)
-    if td:
-        data = stock_queries.query_industry_constituents_from_db(
-            conn, industry=industry, trade_date=td
-        )
-        if data:
-            return data
-    try:
-        data = sector_constituents.fetch_industry_constituents_ths(industry)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("constituents fetch failed industry=%s", industry)
-        raise HTTPException(status_code=502, detail="成分股数据拉取失败") from exc
-    return data
+    return load_sector_constituents_bundle(conn, industry=industry, trade_date=trade_date)
 
 
 @app.get("/sectors/{industry:path}")
