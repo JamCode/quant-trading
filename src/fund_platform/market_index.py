@@ -171,6 +171,53 @@ def _opt_int(value: Any) -> Optional[int]:
     return int(f)
 
 
+def _em_px_scaled(value: Any) -> Optional[float]:
+    """East Money global list (``fltt=1``): prices often stored as cents."""
+    x = _opt_float(value)
+    if x is not None and x > 10000:
+        return round(x / 100, 4)
+    return x
+
+
+def _global_em_row_from_record(rec: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Parse one global/HK index row; fix ``fltt=1`` percent scale (32 → 0.32%)."""
+    code = str(rec.get("代码", "")).strip().upper()
+    name = str(rec.get("名称", "")).strip()
+    if not code or not name:
+        return None
+
+    last_price = _em_px_scaled(rec.get("最新价"))
+    prev_close = _em_px_scaled(rec.get("昨收价"))
+    change_amt = _opt_float(rec.get("涨跌额"))
+    if change_amt is not None and abs(change_amt) > 1000:
+        change_amt = round(change_amt / 100, 4)
+
+    change_pct = _opt_float(rec.get("涨跌幅"))
+    if change_pct is not None and abs(change_pct) > 100:
+        change_pct = round(change_pct / 100, 4)
+
+    if last_price is not None and prev_close is not None and prev_close != 0:
+        change_amt = round(last_price - prev_close, 4)
+        change_pct = round(change_amt / prev_close * 100, 4)
+    elif change_pct is not None and 1 <= abs(change_pct) < 100:
+        change_pct = round(change_pct / 100, 4)
+
+    return {
+        "code": code,
+        "name": name,
+        "last_price": last_price,
+        "change_pct": change_pct,
+        "change_amt": change_amt,
+        "open_px": _em_px_scaled(rec.get("开盘价")),
+        "high_px": _em_px_scaled(rec.get("最高价")),
+        "low_px": _em_px_scaled(rec.get("最低价")),
+        "prev_close": prev_close,
+        "volume": None,
+        "amount": None,
+        "amplitude_pct": _opt_float(rec.get("振幅")),
+    }
+
+
 def fetch_main_indices_em(*, max_attempts: int = 4) -> list[dict[str, Any]]:
     """East Money 沪深重要指数 spot (single page)."""
     import pandas as pd
@@ -331,41 +378,9 @@ def fetch_global_indices_em(*, max_attempts: int = 4) -> list[dict[str, Any]]:
                     )
                 rows: list[dict[str, Any]] = []
                 for rec in df.to_dict("records"):
-                    code = str(rec.get("代码", "")).strip().upper()
-                    name = str(rec.get("名称", "")).strip()
-                    if not code or not name:
-                        continue
-                    last_price = _opt_float(rec.get("最新价"))
-                    if last_price is not None and last_price > 10000:
-                        last_price = round(last_price / 100, 4)
-                    change_pct = _opt_float(rec.get("涨跌幅"))
-                    if change_pct is not None and abs(change_pct) > 100:
-                        change_pct = round(change_pct / 100, 4)
-                    change_amt = _opt_float(rec.get("涨跌额"))
-                    if change_amt is not None and abs(change_amt) > 1000:
-                        change_amt = round(change_amt / 100, 4)
-                    def _px(v: Any) -> Optional[float]:
-                        x = _opt_float(v)
-                        if x is not None and x > 10000:
-                            return round(x / 100, 4)
-                        return x
-
-                    rows.append(
-                        {
-                            "code": code,
-                            "name": name,
-                            "last_price": last_price,
-                            "change_pct": change_pct,
-                            "change_amt": change_amt,
-                            "open_px": _px(rec.get("开盘价")),
-                            "high_px": _px(rec.get("最高价")),
-                            "low_px": _px(rec.get("最低价")),
-                            "prev_close": _px(rec.get("昨收价")),
-                            "volume": None,
-                            "amount": None,
-                            "amplitude_pct": _opt_float(rec.get("振幅")),
-                        }
-                    )
+                    row = _global_em_row_from_record(rec)
+                    if row:
+                        rows.append(row)
                 delay = fp_settings.market_index_request_delay_sec()
                 if delay > 0:
                     time.sleep(delay)
