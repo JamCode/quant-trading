@@ -18,7 +18,7 @@ function fmtWeight(v) {
 export async function mountHoldingsLookup(query) {
   const host = main();
   const q = (query.q || "").trim();
-  host.innerHTML = `<p class="sub meta">按股票代码或名称（含海外标的）反查持有该股的基金 · 数据来自季报</p>
+  host.innerHTML = `<p class="sub meta">按股票代码或名称（含海外标的）反查持有该股的基金 · 季报披露 · 库内约 <span id="holdings-index-count">—</span> 只基金有持仓索引（最近同步 <span id="holdings-index-sync">—</span>）</p>
     <form class="toolbar" id="holdings-search-form">
       <label class="holdings-search-label">
         <span>标的</span>
@@ -38,6 +38,21 @@ export async function mountHoldingsLookup(query) {
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
 
+  apiGet("/fund-holdings/search", { q: "600519", limit: 1 })
+    .then((data) => {
+      const el = host.querySelector("#holdings-index-count");
+      const syncEl = host.querySelector("#holdings-index-sync");
+      if (el && data.funds_indexed != null) {
+        el.textContent = String(data.funds_indexed);
+      }
+      if (syncEl && data.last_sync_at) {
+        syncEl.textContent = data.last_sync_at;
+      } else if (syncEl) {
+        syncEl.textContent = "未知";
+      }
+    })
+    .catch(() => {});
+
   if (!q) {
     return;
   }
@@ -47,8 +62,9 @@ export async function mountHoldingsLookup(query) {
     const data = await apiGet("/fund-holdings/search", { q, limit: 100 });
     const items = data.items || [];
     if (!items.length) {
-      results.innerHTML = `<p class="meta">未找到持有「${escapeHtml(q)}」的基金。
-        可先打开相关基金详情触发持仓入库，或等待每周持仓同步任务。</p>`;
+      const idx = data.funds_indexed != null ? `当前索引约 ${data.funds_indexed} 只基金。` : "";
+      results.innerHTML = `<p class="meta">未找到持有「${escapeHtml(q)}」的基金。${idx}
+        若应有结果，可能是上周同步未含海外代码，正在补全；也可先打开相关 QDII/主动基金详情触发入库。</p>`;
       return;
     }
     let rows = "";

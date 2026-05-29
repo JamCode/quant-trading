@@ -37,6 +37,31 @@ def _search_tokens(q: str) -> tuple[str, list[str]]:
     return "name", parts[:5] if parts else [raw]
 
 
+def holdings_index_meta(conn) -> dict[str, Any]:
+    """Coverage stats for reverse-lookup UI."""
+    cur = _cursor(conn)
+    cur.execute("SELECT COUNT(DISTINCT fund_code) AS c FROM fund_holdings")
+    funds_indexed = int((cur.fetchone() or {}).get("c") or 0)
+    cur.execute(
+        """
+        SELECT finished_at, funds_target, funds_ok, funds_failed
+        FROM fund_holdings_jobs
+        WHERE ok = 1
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    )
+    job = cur.fetchone()
+    last_sync = ""
+    if job and job.get("finished_at"):
+        last_sync = str(job["finished_at"])[:19]
+    return {
+        "funds_indexed": funds_indexed,
+        "last_sync_at": last_sync,
+        "last_sync_ok": int(job["funds_ok"]) if job and job.get("funds_ok") is not None else None,
+    }
+
+
 def search_funds_holding_stock(
     conn,
     q: str,

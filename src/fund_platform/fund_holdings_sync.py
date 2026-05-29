@@ -20,11 +20,26 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def list_target_fund_codes(conn) -> list[str]:
+def list_target_fund_codes(conn, *, scope: str = "pipeline") -> list[str]:
     import pymysql.cursors
 
-    keywords = fp_settings.fund_holdings_type_keywords()
     cur = conn.cursor(pymysql.cursors.DictCursor)
+    scope_norm = (scope or "pipeline").strip().lower()
+    if scope_norm == "all":
+        cur.execute("SELECT code FROM funds ORDER BY code")
+        return [str(r["code"]).strip() for r in cur.fetchall() if r.get("code")]
+    if scope_norm == "qdii":
+        cur.execute(
+            """
+            SELECT code FROM funds
+            WHERE fund_type LIKE %s OR short_name LIKE %s
+            ORDER BY code
+            """,
+            ("%QDII%", "%QDII%"),
+        )
+        return [str(r["code"]).strip() for r in cur.fetchall() if r.get("code")]
+
+    keywords = fp_settings.fund_holdings_type_keywords()
     clauses = " OR ".join(["fund_type LIKE %s"] * len(keywords))
     params = [f"%{k}%" for k in keywords]
     cur.execute(
@@ -101,6 +116,7 @@ def sync_fund_holdings(
     *,
     fund_codes: Optional[list[str]] = None,
     max_funds: Optional[int] = None,
+    scope: str = "pipeline",
 ) -> dict[str, Any]:
     engine = get_engine()
     raw = engine.raw_connection()
@@ -111,7 +127,7 @@ def sync_fund_holdings(
     fail_n = 0
     try:
         if fund_codes is None:
-            targets = list_target_fund_codes(raw)
+            targets = list_target_fund_codes(raw, scope=scope)
         else:
             targets = [c.strip() for c in fund_codes if c.strip()]
         cap = max_funds if max_funds is not None else fp_settings.fund_holdings_max_per_run()

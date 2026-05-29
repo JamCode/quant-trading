@@ -22,6 +22,9 @@ def normalize_stock_code(value: Any) -> str:
     if not s:
         return ""
     if s.isdigit():
+        # A-share 6-digit; 5-digit HK (00700) must not zfill to 007000
+        if len(s) >= 5:
+            return s
         return s.zfill(6)
     return s
 

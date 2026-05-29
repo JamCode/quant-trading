@@ -9,6 +9,8 @@ from fund_platform.fund_holdings_queries import _search_tokens
 def test_normalize_stock_code_global():
     assert normalize_stock_code("nvda") == "NVDA"
     assert normalize_stock_code("600519") == "600519"
+    assert normalize_stock_code("00700") == "00700"
+    assert normalize_stock_code("519") == "000519"
 
 
 def test_row_from_em_record_overseas():

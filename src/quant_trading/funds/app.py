@@ -44,7 +44,7 @@ from fund_platform.stock_price_history import (
     query_stock_price_daily,
 )
 from fund_platform.peer_rank import ensure_peer_rank, query_peer_rank
-from fund_platform.fund_holdings_queries import search_funds_holding_stock
+from fund_platform.fund_holdings_queries import holdings_index_meta, search_funds_holding_stock
 from fund_platform.peer_same_type import (
     ensure_peer_same_type,
     query_peer_same_type,
@@ -482,6 +482,7 @@ def api_fund_holdings_search(
     items, total, report_hint = search_funds_holding_stock(
         conn, q.strip(), limit=limit, offset=offset
     )
+    meta = holdings_index_meta(conn)
     return {
         "q": q.strip(),
         "items": items,
@@ -490,6 +491,7 @@ def api_fund_holdings_search(
         "offset": offset,
         "report_date_hint": report_hint,
         "note": "季报持仓，非实时；按各基金最近报告期汇总",
+        **meta,
     }
 
 
