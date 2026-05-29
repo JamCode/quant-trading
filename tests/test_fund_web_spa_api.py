@@ -75,12 +75,14 @@ def test_meta_stocks_includes_board_and_industry_options():
             "sort_options": [{"id": "change_pct", "label": "涨跌幅"}],
             "board_options": [{"id": "sh", "label": "沪市"}],
             "industry_options": ["半导体"],
+            "industry_filter_ready": True,
         }
         response = client.get("/api/meta/stocks")
     assert response.status_code == 200
     body = response.json()
     assert body["board_options"][0]["id"] == "sh"
     assert body["industry_options"] == ["半导体"]
+    assert body["industry_filter_ready"] is True
 
 
 def test_api_stocks_passes_board_and_industry_filters():

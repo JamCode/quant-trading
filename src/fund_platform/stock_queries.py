@@ -108,27 +108,112 @@ def board_filter_sql(board: Optional[str], *, alias: str = "sd") -> str:
     return ""
 
 
+def industry_filter_ready(conn, *, trade_date: Optional[str] = None) -> bool:
+    """True when code↔industry mapping exists for filtering the stock list."""
+    td = trade_date or latest_stock_daily_date(conn)
+    if not td:
+        return False
+    if latest_sector_constituent_date(conn, on_or_before=td):
+        return True
+    cur = _cursor(conn)
+    cur.execute(
+        "SELECT 1 AS ok FROM stock_ths_industry WHERE trade_date = %s LIMIT 1",
+        (td,),
+    )
+    return cur.fetchone() is not None
+
+
+def _distinct_industries(
+    cur,
+    table: str,
+    *,
+    trade_date: str,
+    limit: int,
+) -> list[str]:
+    cur.execute(
+        f"""
+        SELECT DISTINCT industry
+        FROM {table}
+        WHERE trade_date = %s AND industry IS NOT NULL AND industry != ''
+        ORDER BY industry
+        LIMIT %s
+        """,
+        (trade_date, limit),
+    )
+    return [str(r["industry"]) for r in cur.fetchall() if r.get("industry")]
+
+
 def list_stock_industry_options(
     conn,
     *,
     trade_date: Optional[str] = None,
     limit: int = 500,
 ) -> list[str]:
+    """Industry names for UI: constituent map, then sti, then sector fund-flow."""
     td = trade_date or latest_stock_daily_date(conn)
     if not td:
         return []
+    lim = max(1, min(limit, 1000))
     cur = _cursor(conn)
+    cd = latest_sector_constituent_date(conn, on_or_before=td)
+    if cd:
+        out = _distinct_industries(cur, "sector_industry_constituent", trade_date=cd, limit=lim)
+        if out:
+            return out
+    out = _distinct_industries(cur, "stock_ths_industry", trade_date=td, limit=lim)
+    if out:
+        return out
     cur.execute(
         """
         SELECT DISTINCT industry
-        FROM stock_ths_industry
-        WHERE trade_date = %s
+        FROM sector_fund_flow
+        WHERE industry IS NOT NULL AND industry != ''
         ORDER BY industry
         LIMIT %s
         """,
-        (td, max(1, min(limit, 1000))),
+        (lim,),
     )
     return [str(r["industry"]) for r in cur.fetchall() if r.get("industry")]
+
+
+def _industry_filter_sql(
+    conn,
+    *,
+    trade_date: str,
+    industry: str,
+) -> tuple[str, list[Any]]:
+    ind = industry.strip()
+    if not ind:
+        return "", []
+    cd = latest_sector_constituent_date(conn, on_or_before=trade_date)
+    if cd:
+        return (
+            """
+          AND EXISTS (
+            SELECT 1 FROM sector_industry_constituent c
+            WHERE c.trade_date = %s AND c.code = sd.code AND c.industry = %s
+          )
+        """,
+            [cd, ind],
+        )
+    cur = _cursor(conn)
+    cur.execute(
+        "SELECT 1 AS ok FROM stock_ths_industry WHERE trade_date = %s LIMIT 1",
+        (trade_date,),
+    )
+    if cur.fetchone():
+        return (
+            """
+          AND EXISTS (
+            SELECT 1 FROM stock_ths_industry sti
+            WHERE sti.trade_date = sd.trade_date
+              AND sti.code = sd.code
+              AND sti.industry = %s
+          )
+        """,
+            [ind],
+        )
+    return " AND 1=0", []
 
 
 def list_stock_daily_dates(conn, *, limit: int = 30) -> list[str]:
@@ -172,16 +257,9 @@ def query_stock_list(
         where += " AND (sd.code LIKE %s OR sd.name LIKE %s)"
         params.extend([like, like])
     where += board_filter_sql(board, alias="sd")
-    if industry and industry.strip():
-        where += """
-          AND EXISTS (
-            SELECT 1 FROM stock_ths_industry sti
-            WHERE sti.trade_date = sd.trade_date
-              AND sti.code = sd.code
-              AND sti.industry = %s
-          )
-        """
-        params.append(industry.strip())
+    ind_sql, ind_params = _industry_filter_sql(conn, trade_date=trade_date, industry=industry or "")
+    where += ind_sql
+    params.extend(ind_params)
     cur = _cursor(conn)
     cur.execute(f"SELECT COUNT(*) AS c FROM stock_daily sd {where}", params)
     total = int(cur.fetchone()["c"])

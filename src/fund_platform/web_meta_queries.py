@@ -81,6 +81,7 @@ def stocks_catalog_meta(conn, *, trade_date: str | None = None) -> dict[str, Any
             {"id": bid, "label": label} for bid, label in stock_queries.STOCK_BOARD_OPTIONS
         ],
         "industry_options": stock_queries.list_stock_industry_options(conn, trade_date=td),
+        "industry_filter_ready": stock_queries.industry_filter_ready(conn, trade_date=td),
     }
 
 

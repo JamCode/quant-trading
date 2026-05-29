@@ -162,9 +162,13 @@ export async function mountStocks(query) {
     }
 
     const filterParts = buildFilterSummary(query, meta);
+    const industryMapHint =
+      meta.industry_filter_ready === false && (meta.industry_options || []).length
+        ? "（行业名来自资金流；按行业筛股需先跑成分股同步）"
+        : "";
     const filterHint = filterParts.length
-      ? `当前：${filterParts.join(" · ")}`
-      : "点击板块标签筛选；表头点击排序";
+      ? `当前：${filterParts.join(" · ")}${industryMapHint}`
+      : `点击板块标签筛选；表头点击排序${industryMapHint}`;
 
     host.innerHTML = `<p class="sub meta">数据日 <strong>${escapeHtml(data.trade_date || "—")}</strong> · 共 ${data.total ?? 0} 只 · 第 ${data.page}/${data.pages} 页</p>
       <div class="funds-filters panel stocks-filters">
