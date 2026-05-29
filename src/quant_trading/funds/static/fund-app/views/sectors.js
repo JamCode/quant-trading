@@ -49,13 +49,21 @@ export async function mountSectors(query) {
       rowsHtml = '<tr><td colspan="5">暂无数据</td></tr>';
     }
 
-    host.innerHTML = `<p class="sub meta">同花顺行业主力资金 · 流通市值来自成分股 JOIN</p>
+    const dr = data.date_range || {};
+    let rangeMeta = `数据日 <strong>${escapeHtml(data.trade_date || "—")}</strong>`;
+    if (dr.start_date && dr.end_date && dr.start_date !== dr.end_date) {
+      rangeMeta = `累计 <strong>${dr.start_date}</strong> ～ <strong>${dr.end_date}</strong>（${dr.days_actual || "—"} 个交易日）`;
+    } else if (dr.start_date) {
+      rangeMeta = `数据日 <strong>${escapeHtml(dr.end_date || data.trade_date || "—")}</strong>`;
+    }
+
+    host.innerHTML = `<p class="sub meta">同花顺行业主力资金 · 近N日累计=库内每日「即时」快照加总 · 流通市值来自成分股 JOIN</p>
       <form class="toolbar" id="sectors-form">
         <label><span>统计区间</span><select name="period">${periodOpts}</select></label>
-        <label><span>交易日</span><select name="trade_date">${dateOpts}</select></label>
+        <label><span>截止日</span><select name="trade_date">${dateOpts}</select></label>
         <button type="submit">刷新</button>
       </form>
-      <p class="meta">数据日 <strong>${escapeHtml(data.trade_date || "—")}</strong> · 区间 <strong>${escapeHtml(period)}</strong> · 共 ${(data.items || []).length} 个行业</p>
+      <p class="meta">${rangeMeta} · 区间 <strong>${escapeHtml(period)}</strong> · 共 ${(data.items || []).length} 个行业</p>
       <section class="panel">
         <table class="data cols-sector-5"><colgroup><col /><col /><col /><col /><col /></colgroup>
           <thead><tr>

@@ -9,7 +9,17 @@ import pymysql.cursors
 
 from fund_platform import settings as fp_settings
 
-_PERIOD_OPTIONS = ["即时", "3日排行", "5日排行", "10日排行", "20日排行"]
+_PERIOD_OPTIONS = [
+    "即时",
+    "近3日累计",
+    "近5日累计",
+    "近10日累计",
+    "近20日累计",
+    "3日排行",
+    "5日排行",
+    "10日排行",
+    "20日排行",
+]
 
 
 def period_options() -> list[str]:

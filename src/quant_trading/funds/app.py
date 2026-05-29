@@ -723,19 +723,34 @@ def api_sector_fund_flow(
     sort: str = Query(default="net_desc"),
     limit: int = Query(default=90, ge=1, le=200),
 ):
-    rows, td = sector_queries.query_sector_flow(
-        conn,
-        trade_date=trade_date,
-        period=period,
-        sort=sort,
-        limit=limit,
-    )
-    return {
+    cum_days = sector_queries.parse_cumulative_days(period)
+    date_range: Optional[dict[str, Any]] = None
+    if cum_days:
+        rows, td, meta = sector_queries.query_sector_flow_cumulative(
+            conn,
+            trade_date=trade_date,
+            days=cum_days,
+            sort=sort,
+            limit=limit,
+        )
+        date_range = meta or None
+    else:
+        rows, td = sector_queries.query_sector_flow(
+            conn,
+            trade_date=trade_date,
+            period=period,
+            sort=sort,
+            limit=limit,
+        )
+    payload: dict[str, Any] = {
         "trade_date": td,
         "period": period,
         "sort": sort,
         "items": rows,
     }
+    if date_range:
+        payload["date_range"] = date_range
+    return payload
 
 
 @app.get("/sectors", response_class=HTMLResponse)

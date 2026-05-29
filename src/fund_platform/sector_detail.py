@@ -48,6 +48,12 @@ def load_sector_detail_bundle(
             constituents,
             key=lambda x: (x.get("change_pct") is None, -(x.get("change_pct") or 0)),
         )
+    flow_history, _ = sector_queries.query_sector_industry_history(
+        conn,
+        industry=industry,
+        trade_date=td or trade_date,
+        limit=20,
+    )
     return {
         "industry": industry,
         "period": period,
@@ -57,4 +63,5 @@ def load_sector_detail_bundle(
         "fetch_error": fetch_error,
         "data_source": data_source,
         "lookup_date": lookup_date,
+        "flow_history": flow_history,
     }

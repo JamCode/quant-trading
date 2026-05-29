@@ -1,12 +1,57 @@
-"""Sector fund flow normalization (THS / AkShare shape)."""
+"""Sector fund flow normalization (THS / AkShare shape) and cumulative queries."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
 from fund_platform.sector_flow import _normalize_row, fetch_sector_flow_ths
+from fund_platform.sector_queries import parse_cumulative_days, query_sector_flow_cumulative
+
+
+def test_parse_cumulative_days():
+    assert parse_cumulative_days("近5日累计") == 5
+    assert parse_cumulative_days("近10日累计") == 10
+    assert parse_cumulative_days("即时") is None
+    assert parse_cumulative_days("3日排行") is None
+
+
+def test_query_sector_flow_cumulative_aggregates(monkeypatch):
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.cursor.return_value = cur
+
+    def fake_fetchall():
+        if cur.execute.call_count == 1:
+            return [{"d": "2026-05-29"}, {"d": "2026-05-28"}, {"d": "2026-05-27"}]
+        return [
+            {
+                "industry": "白酒",
+                "inflow_amt": 200.0,
+                "outflow_amt": 150.0,
+                "net_amt": 50.0,
+                "day_count": 3,
+                "industry_index": "2263",
+                "change_pct": "4.1",
+                "float_market_cap": None,
+                "company_count": 20,
+                "leader_stock": "酒鬼酒",
+                "leader_change_pct": "10",
+                "leader_price": "45",
+                "updated_at": None,
+            }
+        ]
+
+    cur.fetchall.side_effect = fake_fetchall
+    cur.fetchone.return_value = {"d": "2026-05-29"}
+
+    rows, td, meta = query_sector_flow_cumulative(conn, trade_date="2026-05-29", days=5)
+    assert td == "2026-05-29"
+    assert meta["days_actual"] == 3
+    assert meta["start_date"] == "2026-05-27"
+    assert len(rows) == 1
+    assert rows[0]["net_amt"] == 50.0
 
 
 def test_normalize_row_instant_period():
