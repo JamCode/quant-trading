@@ -241,8 +241,11 @@ def api_meta_funds(conn=Depends(get_conn)):
 
 
 @app.get("/api/meta/stocks")
-def api_meta_stocks(conn=Depends(get_conn)):
-    return web_meta_queries.stocks_catalog_meta(conn)
+def api_meta_stocks(
+    conn=Depends(get_conn),
+    trade_date: Optional[str] = Query(default=None),
+):
+    return web_meta_queries.stocks_catalog_meta(conn, trade_date=trade_date)
 
 
 @app.get("/api/meta/market-indices")
@@ -365,12 +368,16 @@ def api_stocks(
     conn=Depends(get_conn),
     trade_date: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
+    board: Optional[str] = Query(default=None),
+    industry: Optional[str] = Query(default=None),
     sort: str = Query(default="change_pct"),
     order: str = Query(default="desc"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
 ):
     td = trade_date or stock_queries.latest_stock_daily_date(conn)
+    board_norm = stock_queries.normalize_stock_board(board)
+    industry_norm = industry.strip() if industry and industry.strip() else None
     if not td:
         return {
             "trade_date": None,
@@ -385,6 +392,8 @@ def api_stocks(
         conn,
         trade_date=td,
         q=q,
+        board=board_norm,
+        industry=industry_norm,
         sort=sort,
         order=order,
         limit=per_page,
@@ -398,7 +407,14 @@ def api_stocks(
         "total": total,
         "pages": pages,
         "items": items,
-        "filters": {"q": q, "sort": sort, "order": order, "trade_date": td},
+        "filters": {
+            "q": q,
+            "board": board_norm,
+            "industry": industry_norm,
+            "sort": sort,
+            "order": order,
+            "trade_date": td,
+        },
     }
 
 

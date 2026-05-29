@@ -40,6 +40,16 @@ STOCK_SORT_OPTIONS: list[tuple[str, str]] = [
     ("change_ytd_pct", "年初至今"),
 ]
 
+STOCK_BOARD_OPTIONS: list[tuple[str, str]] = [
+    ("sh", "沪市"),
+    ("kcb", "科创板"),
+    ("sz", "深市"),
+    ("cyb", "创业板"),
+    ("bj", "北交所"),
+]
+
+_STOCK_BOARDS = frozenset(b for b, _ in STOCK_BOARD_OPTIONS)
+
 
 def _cursor(conn):
     return conn.cursor(pymysql.cursors.DictCursor)
@@ -67,6 +77,55 @@ def latest_stock_daily_date(conn) -> Optional[str]:
     return d.isoformat() if isinstance(d, date) else str(d)
 
 
+def normalize_stock_board(board: Optional[str]) -> Optional[str]:
+    if not board or not str(board).strip():
+        return None
+    b = str(board).strip().lower()
+    return b if b in _STOCK_BOARDS else None
+
+
+def board_filter_sql(board: Optional[str], *, alias: str = "sd") -> str:
+    """SQL AND fragment for A-share board (code prefix rules)."""
+    b = normalize_stock_board(board)
+    if not b:
+        return ""
+    col = f"{alias}.code"
+    if b == "sh":
+        return f" AND ({col} LIKE '60%' AND {col} NOT LIKE '688%' AND {col} NOT LIKE '689%')"
+    if b == "kcb":
+        return f" AND ({col} LIKE '688%' OR {col} LIKE '689%')"
+    if b == "sz":
+        return f" AND ({col} LIKE '00%' OR {col} LIKE '001%' OR {col} LIKE '002%')"
+    if b == "cyb":
+        return f" AND {col} LIKE '30%'"
+    if b == "bj":
+        return f" AND ({col} LIKE '4%' OR {col} LIKE '8%' OR {col} LIKE '92%')"
+    return ""
+
+
+def list_stock_industry_options(
+    conn,
+    *,
+    trade_date: Optional[str] = None,
+    limit: int = 500,
+) -> list[str]:
+    td = trade_date or latest_stock_daily_date(conn)
+    if not td:
+        return []
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT DISTINCT industry
+        FROM stock_ths_industry
+        WHERE trade_date = %s
+        ORDER BY industry
+        LIMIT %s
+        """,
+        (td, max(1, min(limit, 1000))),
+    )
+    return [str(r["industry"]) for r in cur.fetchall() if r.get("industry")]
+
+
 def list_stock_daily_dates(conn, *, limit: int = 30) -> list[str]:
     cur = _cursor(conn)
     cur.execute(
@@ -92,6 +151,8 @@ def query_stock_list(
     *,
     trade_date: str,
     q: Optional[str] = None,
+    board: Optional[str] = None,
+    industry: Optional[str] = None,
     sort: str = "change_pct",
     order: str = "desc",
     limit: int = 50,
@@ -99,24 +160,35 @@ def query_stock_list(
 ) -> tuple[list[dict[str, Any]], int]:
     sort_col = _STOCK_LIST_SORT.get(sort, "change_pct")
     direction = "ASC" if order.lower() == "asc" else "DESC"
-    where = "WHERE trade_date = %s"
+    where = "WHERE sd.trade_date = %s"
     params: list[Any] = [trade_date]
     if q and q.strip():
         like = f"%{q.strip()}%"
-        where += " AND (code LIKE %s OR name LIKE %s)"
+        where += " AND (sd.code LIKE %s OR sd.name LIKE %s)"
         params.extend([like, like])
+    where += board_filter_sql(board, alias="sd")
+    if industry and industry.strip():
+        where += """
+          AND EXISTS (
+            SELECT 1 FROM stock_ths_industry sti
+            WHERE sti.trade_date = sd.trade_date
+              AND sti.code = sd.code
+              AND sti.industry = %s
+          )
+        """
+        params.append(industry.strip())
     cur = _cursor(conn)
-    cur.execute(f"SELECT COUNT(*) AS c FROM stock_daily {where}", params)
+    cur.execute(f"SELECT COUNT(*) AS c FROM stock_daily sd {where}", params)
     total = int(cur.fetchone()["c"])
     lim = max(1, min(limit, 200))
     off = max(0, offset)
     cur.execute(
         f"""
-        SELECT code, name, price, change_pct, float_market_cap, total_market_cap,
-               turnover_pct, amount, pe_dynamic, pb, change_60d_pct, change_ytd_pct
-        FROM stock_daily
+        SELECT sd.code, sd.name, sd.price, sd.change_pct, sd.float_market_cap, sd.total_market_cap,
+               sd.turnover_pct, sd.amount, sd.pe_dynamic, sd.pb, sd.change_60d_pct, sd.change_ytd_pct
+        FROM stock_daily sd
         {where}
-        ORDER BY {sort_col} IS NULL, {sort_col} {direction}, code ASC
+        ORDER BY sd.{sort_col} IS NULL, sd.{sort_col} {direction}, sd.code ASC
         LIMIT %s OFFSET %s
         """,
         [*params, lim, off],

@@ -740,6 +740,35 @@ code {
   margin: 0.65rem 0 0;
 }
 
+.stocks-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.stocks-table th.sortable:hover {
+  color: var(--accent);
+}
+
+.stocks-table th.sort-active {
+  color: var(--accent);
+}
+
+.toolbar a.btn.secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.toolbar a.btn.secondary:hover {
+  border-color: var(--accent);
+}
+
 .table-scroll {
   overflow-x: auto;
 }

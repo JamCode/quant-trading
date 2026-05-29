@@ -65,3 +65,35 @@ def test_shell_backtest_returns_html():
     response = client.get("/backtest")
     assert response.status_code == 200
     assert "fund-app/main.js" in response.text
+
+
+def test_meta_stocks_includes_board_and_industry_options():
+    with patch("fund_platform.web_meta_queries.stocks_catalog_meta") as sm:
+        sm.return_value = {
+            "latest_trade_date": "2026-05-28",
+            "trade_dates": ["2026-05-28"],
+            "sort_options": [{"id": "change_pct", "label": "涨跌幅"}],
+            "board_options": [{"id": "sh", "label": "沪市"}],
+            "industry_options": ["半导体"],
+        }
+        response = client.get("/api/meta/stocks")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["board_options"][0]["id"] == "sh"
+    assert body["industry_options"] == ["半导体"]
+
+
+def test_api_stocks_passes_board_and_industry_filters():
+    with patch("fund_platform.stock_queries.latest_stock_daily_date", return_value="2026-05-28"), patch(
+        "fund_platform.stock_queries.query_stock_list", return_value=([], 0)
+    ) as qsl:
+        response = client.get(
+            "/api/stocks",
+            params={"board": "cyb", "industry": "半导体", "q": "300"},
+        )
+    assert response.status_code == 200
+    qsl.assert_called_once()
+    kwargs = qsl.call_args.kwargs
+    assert kwargs["board"] == "cyb"
+    assert kwargs["industry"] == "半导体"
+    assert kwargs["q"] == "300"

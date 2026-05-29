@@ -101,7 +101,7 @@ export async function mountStockDetail(code, query) {
 
     host.querySelectorAll(".chip[data-industry]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        navigate("/sectors", {
+        navigate("/stocks", {
           query: { industry: btn.getAttribute("data-industry"), trade_date: td },
         });
         window.dispatchEvent(new PopStateEvent("popstate"));

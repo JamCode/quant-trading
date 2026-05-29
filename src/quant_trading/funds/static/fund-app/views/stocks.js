@@ -3,6 +3,20 @@ import { navigate } from "../router.js";
 
 const main = () => document.getElementById("app-main");
 
+const SORTABLE_COLUMNS = [
+  { id: "code", label: "代码", className: "" },
+  { id: "name", label: "名称", className: "" },
+  { id: "price", label: "现价", className: "num" },
+  { id: "change_pct", label: "涨跌幅", className: "num" },
+  { id: "float_market_cap", label: "流通市值(亿)", className: "num" },
+  { id: "turnover_pct", label: "换手%", className: "num" },
+  { id: "amount", label: "成交额(亿)", className: "num" },
+  { id: "pe_dynamic", label: "PE", className: "num" },
+  { id: "pb", label: "PB", className: "num" },
+  { id: "change_60d_pct", label: "60日", className: "num" },
+  { id: "change_ytd_pct", label: "年初至今", className: "num" },
+];
+
 function fmtNum(value, digits = 2) {
   if (value === null || value === undefined || value === "") {
     return "—";
@@ -14,23 +28,89 @@ function fmtNum(value, digits = 2) {
   return n.toFixed(digits);
 }
 
+function stocksQueryParams(query, pageOverride) {
+  const params = {
+    trade_date: query.trade_date || "",
+    q: query.q || "",
+    sort: query.sort || "change_pct",
+    order: query.order || "desc",
+    page: pageOverride ?? query.page ?? 1,
+    per_page: query.per_page || 50,
+  };
+  if (query.board) {
+    params.board = query.board;
+  }
+  if (query.industry) {
+    params.industry = query.industry;
+  }
+  return params;
+}
+
+function applyStocksFilter(query, patch) {
+  const next = { ...query, ...patch, page: 1 };
+  if (!next.board) {
+    delete next.board;
+  }
+  if (!next.industry) {
+    delete next.industry;
+  }
+  if (!next.q) {
+    delete next.q;
+  }
+  navigate("/stocks", { query: next });
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function renderBoardChips(options, activeBoard) {
+  return (options || [])
+    .map((o) => {
+      const active = (o.id || "") === (activeBoard || "") ? " active" : "";
+      return `<button type="button" class="chip${active}" data-board="${escapeHtml(o.id)}">${escapeHtml(o.label)}</button>`;
+    })
+    .join("");
+}
+
+function renderSortableHead(sort, order) {
+  return SORTABLE_COLUMNS.map((col) => {
+    const active = col.id === sort;
+    const arrow = active ? (order === "asc" ? " ↑" : " ↓") : "";
+    const cls = ["sortable", col.className, active ? "sort-active" : ""].filter(Boolean).join(" ");
+    return `<th class="${cls}" data-sort="${escapeHtml(col.id)}" scope="col" title="点击排序">${escapeHtml(col.label)}${arrow}</th>`;
+  }).join("");
+}
+
+function buildFilterSummary(query, meta) {
+  const parts = [];
+  if (query.board) {
+    const label = (meta.board_options || []).find((o) => o.id === query.board)?.label;
+    parts.push(label || query.board);
+  }
+  if (query.industry) {
+    parts.push(query.industry);
+  }
+  if (query.q) {
+    parts.push(`「${query.q}」`);
+  }
+  const sortLabel = (meta.sort_options || []).find((o) => o.id === (query.sort || "change_pct"))?.label;
+  if (sortLabel) {
+    parts.push(`排序 ${sortLabel}${query.order === "asc" ? "↑" : "↓"}`);
+  }
+  return parts;
+}
+
 export async function mountStocks(query) {
   const host = main();
   host.innerHTML = '<p class="loading">加载中…</p>';
   try {
-    const meta = await apiGet("/meta/stocks");
+    const tradeDatePref = query.trade_date || "";
+    const meta = await apiGet("/meta/stocks", tradeDatePref ? { trade_date: tradeDatePref } : {});
     const page = Number(query.page || 1);
-    const tradeDate = query.trade_date || meta.latest_trade_date || "";
+    const tradeDate = tradeDatePref || meta.latest_trade_date || "";
     const sort = query.sort || "change_pct";
     const order = query.order || "desc";
-    const data = await apiGet("/stocks", {
-      trade_date: tradeDate,
-      q: query.q || "",
-      sort,
-      order,
-      page,
-      per_page: query.per_page || 50,
-    });
+    const activeBoard = query.board || "";
+    const activeIndustry = query.industry || "";
+    const data = await apiGet("/stocks", stocksQueryParams({ ...query, trade_date: tradeDate }, page));
 
     const dateOpts =
       (meta.trade_dates || []).map((d) => {
@@ -41,10 +121,20 @@ export async function mountStocks(query) {
         ? `<option value="${escapeHtml(data.trade_date)}" selected>${escapeHtml(data.trade_date)}</option>`
         : "");
 
-    const sortOpts = (meta.sort_options || [])
+    const industryOpts =
+      '<option value="">不限行业</option>' +
+      (meta.industry_options || [])
+        .map((ind) => {
+          const sel = ind === activeIndustry ? " selected" : "";
+          return `<option value="${escapeHtml(ind)}"${sel}>${escapeHtml(ind)}</option>`;
+        })
+        .join("");
+
+    const perPage = Number(query.per_page || 50);
+    const perPageOpts = [20, 50, 100, 200]
       .map(
-        (o) =>
-          `<option value="${escapeHtml(o.id)}"${o.id === sort ? " selected" : ""}>${escapeHtml(o.label)}</option>`
+        (n) =>
+          `<option value="${n}"${n === perPage ? " selected" : ""}>${n}</option>`
       )
       .join("");
 
@@ -66,30 +156,33 @@ export async function mountStocks(query) {
     });
     if (!rows) {
       const hint = data.trade_date
-        ? "该日暂无股票快照"
+        ? "无匹配股票，可放宽筛选或<a href=\"#\" data-stocks-clear>清空条件</a>"
         : '暂无数据，请确认 <a href="#" data-nav data-path="/crawler">stock_daily_sync</a> 已运行';
       rows = `<tr><td colspan="11">${hint}</td></tr>`;
     }
 
-    const orderNext = order === "desc" ? "asc" : "desc";
+    const filterParts = buildFilterSummary(query, meta);
+    const filterHint = filterParts.length
+      ? `当前：${filterParts.join(" · ")}`
+      : "点击板块标签筛选；表头点击排序";
 
     host.innerHTML = `<p class="sub meta">数据日 <strong>${escapeHtml(data.trade_date || "—")}</strong> · 共 ${data.total ?? 0} 只 · 第 ${data.page}/${data.pages} 页</p>
+      <div class="funds-filters panel stocks-filters">
+        <p class="dim">板块</p>
+        <div class="chip-group" id="stocks-board-chips">${renderBoardChips(meta.board_options, activeBoard)}</div>
+        <p class="meta funds-filter-hint">${escapeHtml(filterHint)}</p>
+      </div>
       <form class="toolbar" id="stocks-form">
         <label><span>数据日</span><select name="trade_date">${dateOpts}</select></label>
         <label><span>搜索</span><input type="search" name="q" value="${escapeHtml(query.q || "")}" placeholder="代码/名称" /></label>
-        <label><span>排序</span><select name="sort">${sortOpts}</select></label>
-        <label><span>顺序</span><select name="order">
-          <option value="desc"${order === "desc" ? " selected" : ""}>降序</option>
-          <option value="asc"${order === "asc" ? " selected" : ""}>升序</option>
-        </select></label>
-        <button type="submit">查询</button>
-        <button type="button" id="stocks-toggle-order">切换为${orderNext === "asc" ? "升" : "降"}序</button>
+        <label><span>行业</span><select name="industry">${industryOpts}</select></label>
+        <label><span>每页</span><select name="per_page">${perPageOpts}</select></label>
+        <button type="submit">应用</button>
+        <a class="btn secondary" href="#" id="stocks-clear">清空</a>
       </form>
       <section class="panel table-scroll">
-        <table class="data"><thead><tr>
-          <th>代码</th><th>名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
-          <th class="num">流通市值(亿)</th><th class="num">换手%</th><th class="num">成交额(亿)</th>
-          <th class="num">PE</th><th class="num">PB</th><th class="num">60日</th><th class="num">年初至今</th>
+        <table class="data stocks-table"><thead><tr>
+          ${renderSortableHead(sort, order)}
         </tr></thead><tbody>${rows}</tbody></table>
       </section>
       <div class="toolbar">
@@ -97,29 +190,59 @@ export async function mountStocks(query) {
         ${data.page < data.pages ? `<button type="button" data-page="${data.page + 1}">下一页</button>` : ""}
       </div>`;
 
+    host.querySelectorAll("[data-board]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-board") || "";
+        const next = id === activeBoard ? "" : id;
+        applyStocksFilter(query, { board: next });
+      });
+    });
+
     host.querySelector("#stocks-form")?.addEventListener("submit", (event) => {
       event.preventDefault();
       const fd = new FormData(event.target);
+      applyStocksFilter(query, {
+        trade_date: fd.get("trade_date"),
+        q: fd.get("q"),
+        industry: fd.get("industry"),
+        per_page: fd.get("per_page"),
+      });
+    });
+
+    const clearFilters = (event) => {
+      if (event) {
+        event.preventDefault();
+      }
       navigate("/stocks", {
         query: {
-          trade_date: fd.get("trade_date"),
-          q: fd.get("q"),
-          sort: fd.get("sort"),
-          order: fd.get("order"),
-          page: 1,
+          trade_date: data.trade_date || tradeDate,
+          sort: "change_pct",
+          order: "desc",
+          per_page: 50,
         },
       });
       window.dispatchEvent(new PopStateEvent("popstate"));
-    });
+    };
 
-    host.querySelector("#stocks-toggle-order")?.addEventListener("click", () => {
-      navigate("/stocks", { query: { ...query, order: orderNext, page: 1 } });
-      window.dispatchEvent(new PopStateEvent("popstate"));
+    host.querySelector("#stocks-clear")?.addEventListener("click", clearFilters);
+    host.querySelector("[data-stocks-clear]")?.addEventListener("click", clearFilters);
+
+    host.querySelectorAll("th[data-sort]").forEach((th) => {
+      th.addEventListener("click", () => {
+        const col = th.getAttribute("data-sort");
+        if (!col) {
+          return;
+        }
+        const nextOrder = col === sort && order === "desc" ? "asc" : "desc";
+        applyStocksFilter(query, { sort: col, order: nextOrder });
+      });
     });
 
     host.querySelectorAll("[data-page]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        navigate("/stocks", { query: { ...query, page: btn.getAttribute("data-page") } });
+        navigate("/stocks", {
+          query: stocksQueryParams(query, btn.getAttribute("data-page")),
+        });
         window.dispatchEvent(new PopStateEvent("popstate"));
       });
     });
