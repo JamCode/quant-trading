@@ -23,6 +23,7 @@ from fund_platform.market_index import (
     sync_market_index_intraday_cn,
 )
 from fund_platform.stock_daily import sync_stock_daily
+from fund_platform.fund_stock_popularity import sync_fund_stock_popularity
 from fund_platform.sync import sync_catalog_mysql
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,10 @@ def _run_stock_daily_job() -> dict[str, Any]:
 
 def _run_fund_holdings_job() -> dict[str, Any]:
     return run_fund_industry_pipeline()
+
+
+def _run_fund_stock_popularity_job() -> dict[str, Any]:
+    return sync_fund_stock_popularity()
 
 
 def _run_market_index_intraday_cn_job() -> dict[str, Any]:
@@ -136,6 +141,19 @@ def main() -> None:
         coalesce=True,
     )
     registered.add("fund_holdings_pipeline")
+
+    scheduler.add_job(
+        _scheduled("fund_stock_popularity_daily", _run_fund_stock_popularity_job),
+        CronTrigger(
+            hour=fp_settings.fund_stock_popularity_cron_hour(),
+            minute=fp_settings.fund_stock_popularity_cron_minute(),
+        ),
+        id="fund_stock_popularity_daily",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    registered.add("fund_stock_popularity_daily")
 
     intraday_mins = fp_settings.market_index_intraday_cn_interval_minutes()
     scheduler.add_job(

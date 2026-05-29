@@ -95,6 +95,11 @@ def _schedule_summary(task_key: str) -> str:
             f"周一至周五 {fp_settings.industry_pe_cron_hour():02d}:"
             f"{fp_settings.industry_pe_cron_minute():02d}"
         )
+    if task_key == "fund_stock_popularity_daily":
+        return (
+            f"每天 {fp_settings.fund_stock_popularity_cron_hour():02d}:"
+            f"{fp_settings.fund_stock_popularity_cron_minute():02d}"
+        )
     return ""
 
 
@@ -145,6 +150,7 @@ def _all_task_keys() -> tuple[str, ...]:
         "market_index_daily_global",
         "index_valuation_daily_sync",
         "industry_pe_cninfo_daily_sync",
+        "fund_stock_popularity_daily",
     )
 
 

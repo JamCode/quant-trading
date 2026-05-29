@@ -181,6 +181,19 @@ def fund_holdings_cron_day_of_week() -> str:
     return os.environ.get("FUND_HOLDINGS_CRON_DOW", "sun")
 
 
+def fund_stock_popularity_cron_hour() -> int:
+    return int(os.environ.get("FUND_STOCK_POPULARITY_CRON_HOUR", "4"))
+
+
+def fund_stock_popularity_cron_minute() -> int:
+    return int(os.environ.get("FUND_STOCK_POPULARITY_CRON_MINUTE", "30"))
+
+
+def fund_stock_popularity_min_funds() -> int:
+    """Min distinct funds holding a stock to appear in popularity table."""
+    return max(2, int(os.environ.get("FUND_STOCK_POPULARITY_MIN_FUNDS", "3")))
+
+
 def fund_metrics_delay_sec() -> float:
     return max(0.0, float(os.environ.get("FUND_METRICS_DELAY_SEC", "0.6")))
 

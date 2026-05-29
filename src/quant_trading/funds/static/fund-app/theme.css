@@ -672,6 +672,14 @@ code {
   min-width: 14rem;
 }
 
+.holdings-popular-chips {
+  margin-top: 0.35rem;
+}
+
+.holdings-popular-chips .chip {
+  margin-bottom: 0.35rem;
+}
+
 .view-subheading {
   margin: 0 0 0.5rem;
   font-size: 1rem;

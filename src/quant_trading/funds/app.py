@@ -45,6 +45,7 @@ from fund_platform.stock_price_history import (
 )
 from fund_platform.peer_rank import ensure_peer_rank, query_peer_rank
 from fund_platform.fund_holdings_queries import holdings_index_meta, search_funds_holding_stock
+from fund_platform.fund_stock_popularity import query_popular_stocks
 from fund_platform.peer_same_type import (
     ensure_peer_same_type,
     query_peer_same_type,
@@ -482,6 +483,30 @@ def api_stock_price_history(
         "order": ord_norm,
         "items": items,
         "total": total,
+    }
+
+
+@app.get("/api/fund-holdings/popular")
+def api_fund_holdings_popular(
+    conn=Depends(get_conn),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    min_funds: int = Query(default=0, ge=0),
+):
+    """Stocks held by many funds (latest quarterly holdings aggregate)."""
+    min_fc = min_funds if min_funds > 0 else None
+    items, total, updated_at = query_popular_stocks(
+        conn, limit=limit, offset=offset, min_fund_count=min_fc
+    )
+    meta = holdings_index_meta(conn)
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "updated_at": updated_at,
+        "note": "按持有基金数量降序；数据来自 fund_holdings 最近一季",
+        **meta,
     }
 
 
