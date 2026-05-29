@@ -132,9 +132,24 @@ function holdingsHtml(ext, code) {
   return section("重仓标的", inner);
 }
 
+function fmtAum(fund) {
+  if (fund.aum_label) {
+    return fund.aum_label;
+  }
+  if (fund.aum_yi != null && fund.aum_yi !== "") {
+    const n = Number(fund.aum_yi);
+    if (!Number.isNaN(n)) {
+      return `${n.toFixed(2)}亿`;
+    }
+  }
+  return "";
+}
+
 function renderFundBody(fund, ext) {
   const name = fund.short_name || fund.code;
   let html = `<p class="meta">${escapeHtml(fund.fund_type || "")} · ${escapeHtml(name)}</p>`;
+
+  const aumText = fmtAum(fund) || ext?.basic?.["最新规模"] || "";
 
   html += section(
     "行情快照",
@@ -143,6 +158,7 @@ function renderFundBody(fund, ext) {
       ${dlRow("单位净值", fund.nav_unit)}
       ${dlRow("累计净值", fund.nav_acc)}
       ${dlRow("日增长率", fund.daily_pct)}
+      ${dlRow("最新规模", aumText)}
       ${dlRow("申购", fund.subscribe_status)}
       ${dlRow("赎回", fund.redeem_status)}
     </dl>`

@@ -4,6 +4,19 @@ import { openFundDrawer } from "../components/fund-drawer.js";
 
 const main = () => document.getElementById("app-main");
 
+function fmtAum(r) {
+  if (r.aum_label) {
+    return r.aum_label;
+  }
+  if (r.aum_yi != null && r.aum_yi !== "") {
+    const n = Number(r.aum_yi);
+    if (!Number.isNaN(n)) {
+      return `${n.toFixed(2)}亿`;
+    }
+  }
+  return "—";
+}
+
 function subscribeOpenActive(query) {
   return query.subscribe_open === "1" || query.subscribe_open === true;
 }
@@ -85,12 +98,13 @@ export async function mountFunds(query) {
         <td><code>${escapeHtml(r.code)}</code></td>
         <td>${escapeHtml(r.short_name || "")}</td>
         <td>${escapeHtml(r.fund_type || "")}</td>
+        <td class="num">${escapeHtml(fmtAum(r))}</td>
         <td class="num ${pctClass(r.daily_pct)}">${escapeHtml(r.daily_pct || "—")}</td>
         <td class="num">${escapeHtml(r.nav_unit || "—")}</td>
       </tr>`;
     });
     if (!rows) {
-      rows = '<tr><td colspan="5">无匹配基金</td></tr>';
+      rows = '<tr><td colspan="6">无匹配基金</td></tr>';
     }
 
     host.innerHTML = `<p class="sub meta">共 ${data.total} 只 · 第 ${data.page}/${data.pages} 页</p>
@@ -110,10 +124,10 @@ export async function mountFunds(query) {
       </form>
       <section class="panel">
         <table class="data"><colgroup>
-          <col style="width:14%" /><col style="width:32%" /><col style="width:22%" />
-          <col style="width:16%" /><col style="width:16%" />
+          <col style="width:12%" /><col style="width:28%" /><col style="width:18%" />
+          <col style="width:14%" /><col style="width:14%" /><col style="width:14%" />
         </colgroup><thead><tr>
-          <th>代码</th><th>简称</th><th>类型</th><th class="num">日涨跌</th><th class="num">净值</th>
+          <th>代码</th><th>简称</th><th>类型</th><th class="num">规模</th><th class="num">日涨跌</th><th class="num">净值</th>
         </tr></thead><tbody>${rows}</tbody></table>
       </section>
       <div class="toolbar">

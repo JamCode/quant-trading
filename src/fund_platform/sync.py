@@ -101,7 +101,20 @@ def sync_catalog_mysql() -> dict[str, Any]:
             *_SNAPSHOT_COLS,
         ]
         merged_rows = merged[select_cols].itertuples(index=False, name=None)
-        rows = [tuple(map(str, tup)) + (now,) for tup in merged_rows]
+        rows = [tuple(map(str, tup)) for tup in merged_rows]
+
+        cur.execute("SELECT code, aum_yi, aum_label FROM funds WHERE aum_yi IS NOT NULL")
+        aum_preserve = {
+            str(r[0]): (r[1], r[2])
+            for r in cur.fetchall()
+            if r[0]
+        }
+
+        final_rows = []
+        for row in rows:
+            code = row[0]
+            aum_yi, aum_label = aum_preserve.get(code, (None, None))
+            final_rows.append((*row, aum_yi, aum_label, now))
 
         cur.execute("DELETE FROM funds")
         cur.executemany(
@@ -110,11 +123,11 @@ def sync_catalog_mysql() -> dict[str, Any]:
                   code, pinyin_abbr, short_name, fund_type, pinyin_full,
                   nav_date, nav_unit, nav_acc, prev_nav_unit, prev_nav_acc,
                   daily_change, daily_pct, subscribe_status, redeem_status, fee_note,
-                  updated_at
+                  aum_yi, aum_label, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            rows,
+            final_rows,
         )
         cur.execute(
             """

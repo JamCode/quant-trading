@@ -164,6 +164,18 @@ def _safe_detail_payload(payload: Any) -> dict[str, Any]:
     return cleaned if isinstance(cleaned, dict) else {}
 
 
+def _update_aum_from_payload(conn, code: str, payload: dict[str, Any]) -> None:
+    basic = payload.get("basic")
+    if not isinstance(basic, dict):
+        return
+    try:
+        from fund_platform.fund_aum import update_fund_aum
+
+        update_fund_aum(conn, code, basic)
+    except Exception:  # noqa: BLE001
+        logger.warning("fund aum update failed for %s", code, exc_info=True)
+
+
 def _index_holdings_for_lookup(conn, code: str, payload: dict[str, Any]) -> None:
     hold = payload.get("holdings")
     if not isinstance(hold, dict) or not hold.get("stocks"):
@@ -184,11 +196,13 @@ def ensure_fresh_detail(conn, code: str, *, force: bool = False) -> dict[str, An
             pl = cached["payload"]
             if isinstance(pl, dict) and "holdings" in pl:
                 safe = _safe_detail_payload(pl)
+                _update_aum_from_payload(conn, code, safe)
                 _index_holdings_for_lookup(conn, code, safe)
                 return safe
     logger.info("Fetching extended detail for fund %s", code)
     bundle = fetch_detail_bundle(code.strip())
     safe = _safe_detail_payload(bundle)
     upsert_detail(conn, code.strip(), safe)
+    _update_aum_from_payload(conn, code, safe)
     _index_holdings_for_lookup(conn, code, safe)
     return safe

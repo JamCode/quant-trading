@@ -29,6 +29,7 @@ CATALOG_SORT_OPTIONS: list[tuple[str, str]] = [
     ("nav_date", "净值日期"),
     ("return_1y", "近1年"),
     ("return_3m", "近3月"),
+    ("aum_yi", "规模"),
 ]
 
 
@@ -91,6 +92,8 @@ def _order_clause(sort: str, sort_dir: str) -> str:
         return f"m.return_1y{nulls_last} m.return_1y {direction}"
     if s == "return_3m":
         return f"m.return_3m{nulls_last} m.return_3m {direction}"
+    if s == "aum_yi":
+        return f"f.aum_yi{nulls_last} f.aum_yi {direction}"
     return f"f.code {direction}"
 
 
@@ -181,6 +184,8 @@ def query_funds_catalog(
           f.daily_change,
           f.subscribe_status,
           f.redeem_status,
+          f.aum_yi,
+          f.aum_label,
           f.updated_at,
           m.return_1m,
           m.return_3m,
