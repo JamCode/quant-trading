@@ -4,36 +4,80 @@ import { openFundDrawer } from "../components/fund-drawer.js";
 
 const main = () => document.getElementById("app-main");
 
+function subscribeOpenActive(query) {
+  return query.subscribe_open === "1" || query.subscribe_open === true;
+}
+
+function fundsQueryParams(query) {
+  const params = {
+    q: query.q || "",
+    fund_type: query.fund_type || "",
+    category: query.category || "",
+    industry: query.industry || "",
+    sort: query.sort || "code",
+    order: query.order || "asc",
+    page: query.page || 1,
+    per_page: query.per_page || 50,
+  };
+  if (subscribeOpenActive(query)) {
+    params.subscribe_open = 1;
+  }
+  return params;
+}
+
+function applyFundsFilter(query, patch) {
+  const next = { ...query, ...patch, page: 1 };
+  if (!next.category) {
+    delete next.category;
+  }
+  if (!subscribeOpenActive(next)) {
+    delete next.subscribe_open;
+  } else {
+    next.subscribe_open = "1";
+  }
+  navigate("/funds", { query: next });
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function renderCategoryChips(options, activeCategory) {
+  return (options || [])
+    .map((o) => {
+      const active = (o.id || "") === (activeCategory || "") ? " active" : "";
+      return `<button type="button" class="chip${active}" data-category="${escapeHtml(o.id)}">${escapeHtml(o.label)}</button>`;
+    })
+    .join("");
+}
+
 export async function mountFunds(query) {
   const host = main();
   host.innerHTML = '<p class="loading">加载中…</p>';
   try {
     const meta = await apiGet("/meta/funds");
     const page = Number(query.page || 1);
-    const data = await apiGet("/funds", {
-      q: query.q || "",
-      fund_type: query.fund_type || "",
-      category: query.category || "",
-      industry: query.industry || "",
-      sort: query.sort || "code",
-      order: query.order || "asc",
-      page,
-      per_page: query.per_page || 50,
-    });
-    const catOpts =
-      '<option value="">全部类型</option>' +
-      (meta.category_options || [])
-        .map(
-          (o) =>
-            `<option value="${escapeHtml(o.id)}"${o.id === (query.category || "") ? " selected" : ""}>${escapeHtml(o.label)}</option>`
-        )
-        .join("");
+    const data = await apiGet("/funds", fundsQueryParams({ ...query, page }));
+
     const sortOpts = (meta.sort_options || [])
       .map(
         (o) =>
           `<option value="${escapeHtml(o.id)}"${o.id === (query.sort || "code") ? " selected" : ""}>${escapeHtml(o.label)}</option>`
       )
       .join("");
+
+    const activeCat = query.category || "";
+    const subOpen = subscribeOpenActive(query);
+    const filterSummary = [];
+    if (activeCat) {
+      const label = (meta.category_options || []).find((o) => o.id === activeCat)?.label;
+      if (label) {
+        filterSummary.push(label);
+      }
+    }
+    if (subOpen) {
+      filterSummary.push("可申购");
+    }
+    const filterHint = filterSummary.length
+      ? `筛选：${filterSummary.join(" · ")}`
+      : "点击标签筛选；可叠加「可申购」";
 
     let rows = "";
     (data.items || []).forEach((r) => {
@@ -50,9 +94,17 @@ export async function mountFunds(query) {
     }
 
     host.innerHTML = `<p class="sub meta">共 ${data.total} 只 · 第 ${data.page}/${data.pages} 页</p>
+      <div class="funds-filters panel">
+        <p class="dim">资产类型</p>
+        <div class="chip-group" id="funds-category-chips">${renderCategoryChips(meta.category_options, activeCat)}</div>
+        <p class="dim">交易状态</p>
+        <div class="chip-group">
+          <button type="button" class="chip${subOpen ? " active" : ""}" data-subscribe-toggle>可申购</button>
+        </div>
+        <p class="meta funds-filter-hint">${escapeHtml(filterHint)}</p>
+      </div>
       <form class="toolbar" id="funds-form">
-        <label><span>搜索</span><input type="search" name="q" value="${escapeHtml(query.q || "")}" placeholder="代码/名称" /></label>
-        <label><span>分类</span><select name="category">${catOpts}</select></label>
+        <label><span>搜索</span><input type="search" name="q" value="${escapeHtml(query.q || "")}" placeholder="代码/名称/拼音" /></label>
         <label><span>排序</span><select name="sort">${sortOpts}</select></label>
         <button type="submit">查询</button>
       </form>
@@ -69,23 +121,32 @@ export async function mountFunds(query) {
         ${data.page < data.pages ? `<button type="button" data-page="${data.page + 1}">下一页</button>` : ""}
       </div>`;
 
+    host.querySelectorAll("[data-category]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-category") || "";
+        const next = id === activeCat ? "" : id;
+        applyFundsFilter(query, { category: next });
+      });
+    });
+
+    host.querySelector("[data-subscribe-toggle]")?.addEventListener("click", () => {
+      applyFundsFilter(query, { subscribe_open: subOpen ? "" : "1" });
+    });
+
     host.querySelector("#funds-form")?.addEventListener("submit", (event) => {
       event.preventDefault();
       const fd = new FormData(event.target);
-      navigate("/funds", {
-        query: {
-          q: fd.get("q"),
-          category: fd.get("category"),
-          sort: fd.get("sort"),
-          page: 1,
-        },
+      applyFundsFilter(query, {
+        q: fd.get("q"),
+        sort: fd.get("sort"),
       });
-      window.dispatchEvent(new PopStateEvent("popstate"));
     });
 
     host.querySelectorAll("[data-page]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        navigate("/funds", { query: { ...query, page: btn.getAttribute("data-page") } });
+        navigate("/funds", {
+          query: { ...fundsQueryParams(query), page: btn.getAttribute("data-page") },
+        });
         window.dispatchEvent(new PopStateEvent("popstate"));
       });
     });

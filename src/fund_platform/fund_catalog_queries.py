@@ -16,6 +16,7 @@ CATALOG_CATEGORIES: list[tuple[str, str]] = [
     ("mixed", "混合型"),
     ("index", "指数型"),
     ("bond", "债券型"),
+    ("money", "货币型"),
     ("qdii", "QDII"),
     ("etf", "ETF"),
     ("overseas_idx", "海外指数"),
@@ -47,6 +48,8 @@ def _category_clause(category: str) -> tuple[str, list[Any]]:
         return " AND f.fund_type LIKE %s", ["%指数%"]
     if c == "bond":
         return " AND f.fund_type LIKE %s", ["%债券%"]
+    if c == "money":
+        return " AND f.fund_type LIKE %s", ["%货币%"]
     if c == "qdii":
         return (
             " AND (f.fund_type LIKE %s OR f.short_name LIKE %s)",

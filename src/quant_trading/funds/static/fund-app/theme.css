@@ -622,6 +622,22 @@ code {
   margin-bottom: 1rem;
 }
 
+.funds-filters {
+  margin-bottom: 1rem;
+}
+
+.funds-filters .dim {
+  margin: 0.75rem 0 0.35rem;
+}
+
+.funds-filters .dim:first-child {
+  margin-top: 0;
+}
+
+.funds-filter-hint {
+  margin: 0.65rem 0 0;
+}
+
 .table-scroll {
   overflow-x: auto;
 }
