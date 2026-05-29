@@ -6,6 +6,8 @@ from typing import Any, Optional
 
 from fund_platform import sector_constituents, sector_queries, stock_queries
 
+_NO_CONSTITUENTS_MSG = "库内暂无行业成分股索引（由爬虫 sector_fund_flow_daily 同步，非页面实时抓取）"
+
 
 def _constituents_from_db(
     conn,
@@ -42,23 +44,10 @@ def load_sector_constituents_bundle(
     industry: str,
     trade_date: Optional[str] = None,
 ) -> dict[str, Any]:
-    """DB-first constituents; falls back to live THS (may take minutes on cold cache)."""
+    """Constituents from MySQL only (codes + stock_daily quotes)."""
     lookup_date = trade_date or stock_queries.latest_stock_daily_date(conn) or ""
-    alias_note: Optional[str] = None
     bundle = _constituents_from_db(conn, industry=industry, lookup_date=lookup_date) if lookup_date else None
     if bundle:
-        items = bundle.get("items") or []
-        return {
-            "industry": industry,
-            "trade_date": lookup_date,
-            "items": items,
-            "count": len(items),
-            "data_source": "db",
-            "alias_note": bundle.get("alias_note"),
-            "fetch_error": "",
-        }
-    try:
-        bundle = sector_constituents.fetch_industry_constituents_ths(industry)
         items = bundle.get("items") or []
         items = sorted(
             items,
@@ -67,32 +56,23 @@ def load_sector_constituents_bundle(
         return {
             "industry": industry,
             "trade_date": lookup_date,
+            "constituent_date": bundle.get("constituent_date"),
             "items": items,
             "count": len(items),
-            "data_source": "ths",
+            "data_source": "db",
             "alias_note": bundle.get("alias_note"),
             "fetch_error": "",
         }
-    except ValueError as exc:
-        return {
-            "industry": industry,
-            "trade_date": lookup_date,
-            "items": [],
-            "count": 0,
-            "data_source": "",
-            "alias_note": alias_note,
-            "fetch_error": str(exc),
-        }
-    except Exception:
-        return {
-            "industry": industry,
-            "trade_date": lookup_date,
-            "items": [],
-            "count": 0,
-            "data_source": "",
-            "alias_note": alias_note,
-            "fetch_error": "成分股拉取失败，请稍后重试",
-        }
+    return {
+        "industry": industry,
+        "trade_date": lookup_date,
+        "constituent_date": None,
+        "items": [],
+        "count": 0,
+        "data_source": "",
+        "alias_note": None,
+        "fetch_error": _NO_CONSTITUENTS_MSG,
+    }
 
 
 def load_sector_detail_bundle(
@@ -102,7 +82,7 @@ def load_sector_detail_bundle(
     period: str,
     trade_date: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Fast drawer payload: fund summary + history; constituents from DB only."""
+    """Drawer payload: fund summary + history + DB constituents (no live THS)."""
     summary, td = sector_queries.query_sector_industry(
         conn,
         industry=industry,
@@ -113,7 +93,8 @@ def load_sector_detail_bundle(
     constituents: list[dict[str, Any]] = []
     data_source = ""
     alias_note: Optional[str] = None
-    constituents_pending = False
+    constituent_date: Optional[str] = None
+    fetch_error = ""
     bundle = None
     if lookup_date:
         bundle = _constituents_from_db(conn, industry=industry, lookup_date=lookup_date)
@@ -121,8 +102,9 @@ def load_sector_detail_bundle(
         constituents = bundle.get("items") or []
         data_source = "db"
         alias_note = bundle.get("alias_note")
-    else:
-        constituents_pending = True
+        constituent_date = bundle.get("constituent_date")
+    elif lookup_date:
+        fetch_error = _NO_CONSTITUENTS_MSG
     if constituents:
         constituents = sorted(
             constituents,
@@ -145,8 +127,9 @@ def load_sector_detail_bundle(
         "trade_date": td or trade_date or "",
         "summary": summary,
         "constituents": constituents,
-        "constituents_pending": constituents_pending,
-        "fetch_error": "",
+        "constituents_pending": False,
+        "constituent_date": constituent_date,
+        "fetch_error": fetch_error,
         "data_source": data_source,
         "lookup_date": lookup_date,
         "flow_history": flow_history,

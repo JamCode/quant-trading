@@ -99,6 +99,9 @@ function renderSectorBody(data) {
   const history = data.flow_history || [];
   const pending = Boolean(data.constituents_pending);
   let html = `<p class="meta">截止 <strong>${escapeHtml(data.trade_date || "—")}</strong> · 区间 <strong>${escapeHtml(data.period)}</strong>`;
+  if (data.constituent_date && data.constituent_date !== data.trade_date) {
+    html += ` · 成分股索引日 ${escapeHtml(data.constituent_date)}`;
+  }
   if (data.alias_note) {
     html += ` · ${escapeHtml(data.alias_note)}`;
   }
@@ -150,34 +153,6 @@ function renderSectorBody(data) {
   return html;
 }
 
-async function loadConstituentsAsync(industry, tradeDate) {
-  const tbody = document.getElementById("sector-constituents-body");
-  const titleEl = document.getElementById("sector-constituents-title");
-  if (!tbody) {
-    return;
-  }
-  try {
-    const bundle = await apiGet(`/sectors/${encodeURIComponent(industry)}/constituents`, {
-      trade_date: tradeDate,
-    });
-    const rows = bundle.items || [];
-    if (bundle.fetch_error) {
-      tbody.innerHTML = `<tr><td colspan="4">${escapeHtml(bundle.fetch_error)}</td></tr>`;
-    } else if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="4">暂无成分股</td></tr>';
-    } else {
-      tbody.innerHTML = constituentsRowsHtml(rows);
-      bindStockLinks(document.getElementById("drawer-body"));
-    }
-    if (titleEl) {
-      const src = bundle.data_source === "db" ? "库内" : "同花顺";
-      titleEl.textContent = `成分股（${rows.length} 只 · ${src}）`;
-    }
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="4">成分股加载失败：${escapeHtml(err.message)}</td></tr>`;
-  }
-}
-
 export async function openSectorDrawer({ industry, period, trade_date }) {
   openDrawer({ title: industry, html: "", wide: true });
   setDrawerLoading();
@@ -193,9 +168,6 @@ export async function openSectorDrawer({ industry, period, trade_date }) {
       disposeChart = renderFlowHistory(chartHost, data.flow_history);
     }
     bindStockLinks(document.getElementById("drawer-body"));
-    if (data.constituents_pending) {
-      loadConstituentsAsync(industry, trade_date || data.trade_date);
-    }
   } catch (err) {
     setDrawerBody(`<div class="banner-error">加载失败：${escapeHtml(err.message)}</div>`);
   }

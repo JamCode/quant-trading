@@ -258,12 +258,43 @@ def query_stock_industries(
     return [str(r["industry"]) for r in cur.fetchall() if r.get("industry")]
 
 
+def latest_sector_constituent_date(
+    conn,
+    *,
+    on_or_before: Optional[str] = None,
+) -> Optional[str]:
+    """Latest sector_industry_constituent snapshot date (optionally capped)."""
+    cur = _cursor(conn)
+    if on_or_before:
+        cur.execute(
+            """
+            SELECT MAX(trade_date) AS d
+            FROM sector_industry_constituent
+            WHERE trade_date <= %s
+            """,
+            (on_or_before.strip(),),
+        )
+    else:
+        cur.execute("SELECT MAX(trade_date) AS d FROM sector_industry_constituent")
+    row = cur.fetchone()
+    if not row or not row.get("d"):
+        return None
+    d = row["d"]
+    return d.isoformat()[:10] if hasattr(d, "isoformat") else str(d)[:10]
+
+
 def query_industry_constituents_from_db(
     conn,
     *,
     industry: str,
     trade_date: str,
 ) -> Optional[dict[str, Any]]:
+    """Constituent codes from latest DB snapshot; quotes from ``trade_date`` stock_daily."""
+    quote_date = trade_date.strip()
+    constituent_date = latest_sector_constituent_date(conn, on_or_before=quote_date)
+    if not constituent_date:
+        return None
+
     cur = _cursor(conn)
     cur.execute(
         """
@@ -285,11 +316,11 @@ def query_industry_constituents_from_db(
                sd.change_ytd_pct
         FROM sector_industry_constituent c
         LEFT JOIN stock_daily sd
-          ON sd.trade_date = c.trade_date AND sd.code = c.code
+          ON sd.trade_date = %s AND sd.code = c.code
         WHERE c.trade_date = %s AND c.industry = %s
         ORDER BY sd.change_pct IS NULL, sd.change_pct DESC
         """,
-        (trade_date, industry.strip()),
+        (quote_date, constituent_date, industry.strip()),
     )
     rows = cur.fetchall()
     if not rows:
@@ -332,7 +363,8 @@ def query_industry_constituents_from_db(
         )
     return {
         "industry": industry,
-        "trade_date": trade_date,
+        "trade_date": quote_date,
+        "constituent_date": constituent_date,
         "count": len(items),
         "items": items,
         "float_market_cap_sum": round(sum(caps), 2) if caps else None,
