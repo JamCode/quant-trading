@@ -156,6 +156,14 @@ def upsert_detail(conn, code: str, payload: dict[str, Any]) -> None:
     )
 
 
+def _safe_detail_payload(payload: Any) -> dict[str, Any]:
+    """API/JSON-safe detail blob (no NaN/Inf; matches upsert sanitization)."""
+    if not isinstance(payload, dict):
+        return {}
+    cleaned = _mysql_json_safe(payload)
+    return cleaned if isinstance(cleaned, dict) else {}
+
+
 def ensure_fresh_detail(conn, code: str, *, force: bool = False) -> dict[str, Any]:
     ttl = detail_cache_ttl_hours()
     cached = load_cached_detail(conn, code)
@@ -163,8 +171,9 @@ def ensure_fresh_detail(conn, code: str, *, force: bool = False) -> dict[str, An
         if cache_is_fresh(cached["updated_at"], ttl):
             pl = cached["payload"]
             if isinstance(pl, dict) and "holdings" in pl:
-                return pl
+                return _safe_detail_payload(pl)
     logger.info("Fetching extended detail for fund %s", code)
     bundle = fetch_detail_bundle(code.strip())
-    upsert_detail(conn, code.strip(), bundle)
-    return bundle
+    safe = _safe_detail_payload(bundle)
+    upsert_detail(conn, code.strip(), safe)
+    return safe
