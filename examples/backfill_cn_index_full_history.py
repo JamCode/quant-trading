@@ -43,7 +43,7 @@ from fund_platform.market_index import (
     _patch_daily_amount_batch,
     _upsert_daily_batch,
     cn_watchlist,
-    fetch_cn_index_daily_history_em,
+    fetch_cn_index_daily_amount_history,
     fetch_cn_index_daily_history_sina,
 )
 
@@ -126,10 +126,12 @@ def _fetch_em_with_retry(
     last_err: Optional[Exception] = None
     for attempt in range(max_attempts):
         try:
-            rows = fetch_cn_index_daily_history_em(code, name, chunked=chunked)
+            rows = fetch_cn_index_daily_amount_history(
+                code, name, em_chunked=chunked
+            )
             if rows:
                 return rows
-            last_err = RuntimeError("empty EM response")
+            last_err = RuntimeError("empty amount response")
         except Exception as exc:  # noqa: BLE001
             last_err = exc
             logger.warning(
@@ -239,12 +241,12 @@ def run_backfill(
                         chunked=em_chunked,
                     )
                     if not rows:
-                        raise RuntimeError("East Money returned no rows")
+                        raise RuntimeError("no amount rows (EM + Tencent)")
                     span = _row_span(rows)
                     written = 0
                     if not dry_run and rows:
-                        written = _patch_daily_amount_batch(rows)
-                    result = {**span, "rows_updated": written, "source": "eastmoney"}
+                        written = _patch_daily_amount_batch(rows, only_missing=True)
+                    result = {**span, "rows_updated": written, "source": "em+tx"}
 
                 report["results"].setdefault(code, {})[phase_name] = result
                 if not dry_run:

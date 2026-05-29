@@ -144,7 +144,57 @@ def _all_task_keys() -> tuple[str, ...]:
     )
 
 
+def close_stale_runs(
+    *,
+    max_age_hours: Optional[float] = None,
+    task_key: Optional[str] = None,
+) -> int:
+    """Fail orphaned ``running`` rows (e.g. crawler restarted mid-job)."""
+    hours = fp_settings.crawler_stale_run_hours() if max_age_hours is None else max_age_hours
+    if hours <= 0:
+        return 0
+    err = f"stale: no finish within {hours:g}h (process restart or hung job)"
+    engine = get_engine()
+    raw = engine.raw_connection()
+    cur = raw.cursor()
+    try:
+        clauses = [
+            "status = %s",
+            "finished_at IS NULL",
+            "started_at < DATE_SUB(UTC_TIMESTAMP(3), INTERVAL %s HOUR)",
+        ]
+        params: list[Any] = [_STATUS_RUNNING, hours]
+        if task_key:
+            clauses.append("task_key = %s")
+            params.append(task_key)
+        cur.execute(
+            f"""
+            UPDATE crawler_job_runs
+            SET finished_at = UTC_TIMESTAMP(3), status = %s, error = %s
+            WHERE {' AND '.join(clauses)}
+            """,
+            (_STATUS_FAILED, err[:4000], *params),
+        )
+        n = int(cur.rowcount or 0)
+        raw.commit()
+        if n:
+            logger.warning(
+                "closed %s stale crawler run(s) task_key=%s max_age_hours=%s",
+                n,
+                task_key or "*",
+                hours,
+            )
+        return n
+    except Exception:
+        raw.rollback()
+        raise
+    finally:
+        cur.close()
+        raw.close()
+
+
 def begin_run(task_key: str) -> int:
+    close_stale_runs(task_key=task_key)
     engine = get_engine()
     raw = engine.raw_connection()
     cur = raw.cursor()

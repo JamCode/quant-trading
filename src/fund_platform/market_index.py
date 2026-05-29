@@ -112,6 +112,9 @@ _EM_CN_KLINE_URLS = (
     "https://48.push2his.eastmoney.com/api/qt/stock/kline/get",
 )
 
+# Tencent ifzq ``amount`` column is ~1/1000 of East Money push2his ``f6`` (yuan).
+_TX_AMOUNT_TO_YUAN = 1000.0
+
 
 def is_cn_equity_trading_session(now: Optional[datetime] = None) -> bool:
     """Mon–Fri 09:30–11:30, 13:00–15:00 Asia/Shanghai."""
@@ -873,6 +876,108 @@ def fetch_cn_index_daily_history_em(
     return _attach_daily_returns(list(by_date.values()))
 
 
+def fetch_cn_index_daily_history_tx(code: str, name: str) -> list[dict[str, Any]]:
+    """Tencent index daily K (含成交额). Stable on ECS when East Money is blocked."""
+    import akshare as ak
+
+    c = code.strip().zfill(6)
+    sym = code_to_sina_symbol(c)
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            df = ak.stock_zh_index_daily_tx(symbol=sym)
+            if df is None or df.empty:
+                last_exc = RuntimeError("empty Tencent response")
+                time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
+                continue
+            rows: list[dict[str, Any]] = []
+            for rec in df.to_dict("records"):
+                td = _parse_trade_date(rec.get("date"))
+                if not td:
+                    continue
+                raw_amt = _opt_float(rec.get("amount"))
+                amount = (
+                    raw_amt * _TX_AMOUNT_TO_YUAN if raw_amt is not None else None
+                )
+                rows.append(
+                    {
+                        "trade_date": td,
+                        "code": c,
+                        "name": name,
+                        "amount": amount,
+                    }
+                )
+            if rows:
+                delay = fp_settings.market_index_request_delay_sec()
+                if delay > 0:
+                    time.sleep(delay)
+                logger.info(
+                    "cn index %s Tencent amount rows=%s span=%s..%s",
+                    c,
+                    len(rows),
+                    rows[0]["trade_date"],
+                    rows[-1]["trade_date"],
+                )
+                return rows
+            last_exc = RuntimeError("no Tencent amount rows parsed")
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.warning(
+                "cn index %s Tencent amount attempt %s: %s",
+                c,
+                attempt + 1,
+                exc,
+            )
+        time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
+    if last_exc:
+        logger.warning("cn index %s Tencent amount unavailable: %s", c, last_exc)
+    return []
+
+
+def fetch_cn_index_daily_amount_history(
+    code: str,
+    name: str,
+    *,
+    em_chunked: bool = False,
+) -> list[dict[str, Any]]:
+    """成交额历史：腾讯打底（ECS 稳定），东财单次全量覆盖（更准，失败不阻塞）。"""
+    c = code.strip().zfill(6)
+    by_date: dict[str, dict[str, Any]] = {}
+
+    tx_rows = fetch_cn_index_daily_history_tx(c, name)
+    for row in tx_rows:
+        td = str(row.get("trade_date") or "")
+        if td and row.get("amount") is not None:
+            by_date[td] = row
+
+    em_rows: list[dict[str, Any]] = []
+    try:
+        em_rows = _fetch_cn_index_em_kline_page(c, name, beg="19900101", end="20500101")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("cn index %s EM amount quick fetch failed: %s", c, exc)
+    if not em_rows and em_chunked:
+        try:
+            em_rows = fetch_cn_index_daily_history_em(c, name, chunked=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("cn index %s EM amount chunked failed: %s", c, exc)
+
+    em_over = 0
+    for row in em_rows:
+        td = str(row.get("trade_date") or "")
+        if td and row.get("amount") is not None:
+            by_date[td] = {**row, "code": c, "name": name}
+            em_over += 1
+    if by_date:
+        logger.info(
+            "cn index %s amount merge tx=%s em_over=%s total=%s",
+            c,
+            len(tx_rows),
+            em_over,
+            len(by_date),
+        )
+    return list(by_date.values())
+
+
 def fetch_cn_index_daily_history_sina(code: str, name: str) -> list[dict[str, Any]]:
     """Sina full daily OHLCV for one A-share index (no 成交额)."""
     import akshare as ak
@@ -928,35 +1033,24 @@ def fetch_cn_index_daily_history_sina(code: str, name: str) -> list[dict[str, An
 
 
 def fetch_cn_index_daily_history(code: str, name: str) -> list[dict[str, Any]]:
-    """Sina OHLCV + East Money 成交额 overlay (EM optional on failure)."""
+    """Sina OHLCV + 成交额 overlay (东财 + 腾讯补齐)."""
     rows = fetch_cn_index_daily_history_sina(code, name)
     if not rows:
         return rows
-    em_err: Optional[str] = None
-    for attempt in range(3):
-        try:
-            em_rows = fetch_cn_index_daily_history_em(code, name)
-            if em_rows:
-                merged = _merge_cn_amount_from_em(rows, em_rows)
-                with_amt = sum(1 for r in merged if r.get("amount") is not None)
-                logger.info(
-                    "cn index %s amount overlay: %s/%s days from EM",
-                    code,
-                    with_amt,
-                    len(merged),
-                )
-                return merged
-        except Exception as exc:  # noqa: BLE001
-            em_err = str(exc)
-            logger.warning(
-                "cn index %s EM amount fetch attempt %s: %s",
+    try:
+        amt_rows = fetch_cn_index_daily_amount_history(code, name)
+        if amt_rows:
+            merged = _merge_cn_amount_from_em(rows, amt_rows)
+            with_amt = sum(1 for r in merged if r.get("amount") is not None)
+            logger.info(
+                "cn index %s amount overlay: %s/%s days",
                 code,
-                attempt + 1,
-                exc,
+                with_amt,
+                len(merged),
             )
-            time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
-    if em_err:
-        logger.warning("cn index %s proceeding without EM amount: %s", code, em_err)
+            return merged
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("cn index %s amount overlay failed: %s", code, exc)
     return rows
 
 
@@ -1166,22 +1260,63 @@ def _cn_spot_to_daily_rows(spot_rows: list[dict[str, Any]], trade_date: str) -> 
     ]
 
 
-def _fetch_cn_daily_eod(as_of: date) -> tuple[list[dict[str, Any]], list[str]]:
-    """Per-index Sina OHLCV + East Money 成交额 overlay."""
+def fetch_cn_index_recent_bars(
+    code: str,
+    name: str,
+    *,
+    min_date: date,
+    as_of: Optional[date] = None,
+) -> list[dict[str, Any]]:
+    """Recent A-share index daily bars (EOD cron only; not full backfill)."""
+    end_d = as_of or min_date
+    beg = min_date.strftime("%Y%m%d")
+    end = end_d.strftime("%Y%m%d")
+    rows = _fetch_cn_index_em_kline_page(code, name, beg=beg, end=end)
+    if rows:
+        return _attach_daily_returns(rows)
+    return []
+
+
+def _fetch_cn_daily_eod(
+    as_of: date,
+    *,
+    lookback_days: int = 12,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """A-share index EOD: EM spot batch, then narrow K-line per missing code."""
     td_s = as_of.isoformat()
     errors: list[str] = []
-    rows: list[dict[str, Any]] = []
+    by_code: dict[str, dict[str, Any]] = {}
+
+    try:
+        spot_rows = _filter_cn_watchlist(fetch_main_indices_em())
+        for row in _cn_spot_to_daily_rows(spot_rows, td_s):
+            by_code[str(row["code"]).zfill(6)] = row
+        if by_code:
+            logger.info("CN index EOD spot ok codes=%s", sorted(by_code))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("CN index EOD spot batch failed: %s", exc)
+        errors.append(f"spot: {exc}")
+
+    min_date = as_of - timedelta(days=lookback_days)
     for code, name in cn_watchlist():
+        c = code.zfill(6)
+        if c in by_code:
+            continue
         try:
-            hist = fetch_cn_index_daily_history(code, name)
-            bar = _pick_latest_bar_on_or_before(hist, as_of)
+            bars = fetch_cn_index_recent_bars(code, name, min_date=min_date, as_of=as_of)
+            bar = _pick_latest_bar_on_or_before(bars, as_of)
             if bar:
-                rows.append(bar)
+                by_code[c] = bar
             else:
                 errors.append(f"{code}: no bar on/before {td_s}")
         except Exception as exc:  # noqa: BLE001
-            logger.warning("CN index EOD fetch failed %s: %s", code, exc)
+            logger.warning("CN index EOD kline fallback failed %s: %s", code, exc)
             errors.append(f"{code}: {exc}")
+        delay = fp_settings.market_index_request_delay_sec()
+        if delay > 0:
+            time.sleep(delay)
+
+    rows = [by_code[c.zfill(6)] for c, _ in cn_watchlist() if c.zfill(6) in by_code]
     return rows, errors
 
 
@@ -1300,7 +1435,12 @@ def fetch_global_index_daily_history(
     return fetch_global_index_daily_history_sina(em_name, min_date=min_date)
 
 
-def _patch_daily_amount_batch(rows: list[dict[str, Any]], *, chunk: int = 400) -> int:
+def _patch_daily_amount_batch(
+    rows: list[dict[str, Any]],
+    *,
+    chunk: int = 400,
+    only_missing: bool = True,
+) -> int:
     """Update only ``amount`` on existing ``market_index_daily`` rows."""
     patch = [
         r
@@ -1313,10 +1453,11 @@ def _patch_daily_amount_batch(rows: list[dict[str, Any]], *, chunk: int = 400) -
     raw = engine.raw_connection()
     cur = raw.cursor()
     now = _utc_now_iso()
-    sql = """
+    missing_clause = " AND (amount IS NULL OR amount = 0)" if only_missing else ""
+    sql = f"""
         UPDATE market_index_daily
         SET amount = %s, updated_at = %s
-        WHERE trade_date = %s AND code = %s
+        WHERE trade_date = %s AND code = %s{missing_clause}
     """
     updated = 0
     try:
@@ -1370,14 +1511,14 @@ def backfill_cn_index_daily_amount(
         last_err: Optional[str] = None
         for attempt in range(5):
             try:
-                em_rows = fetch_cn_index_daily_history_em(code, name)
+                em_rows = fetch_cn_index_daily_amount_history(code, name)
                 if not em_rows:
-                    last_err = "no EM rows"
+                    last_err = "no amount rows"
                     time.sleep(fp_settings.market_index_retry_sleep_sec() * (attempt + 1))
                     continue
                 em_rows = _filter_since(em_rows, start)
                 em_days = len(em_rows)
-                patched = _patch_daily_amount_batch(em_rows)
+                patched = _patch_daily_amount_batch(em_rows, only_missing=True)
                 if patched > 0:
                     break
                 last_err = "no rows updated"

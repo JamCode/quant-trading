@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backfill A-share index 成交额 (East Money) into market_index_daily."""
+"""Backfill A-share index 成交额 into market_index_daily (East Money + Tencent fallback)."""
 
 from __future__ import annotations
 

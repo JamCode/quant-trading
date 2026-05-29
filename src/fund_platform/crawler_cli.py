@@ -11,7 +11,7 @@ from typing import Any
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fund_platform import settings as fp_settings
-from fund_platform.crawler_jobs import run_scheduled_job, upsert_task_catalog
+from fund_platform.crawler_jobs import close_stale_runs, run_scheduled_job, upsert_task_catalog
 from fund_platform.crawler_logging import setup_crawler_logging
 from fund_platform.fund_holdings_sync import run_fund_industry_pipeline
 from fund_platform.index_valuation import sync_index_valuation_daily
@@ -182,12 +182,14 @@ def main() -> None:
     )
     registered.add("industry_pe_cninfo_daily_sync")
 
+    closed = close_stale_runs()
     upsert_task_catalog(registered=registered)
 
     logger.info(
-        "Fund crawler running log=%s; fund %02d:%02d stock %02d:%02d "
+        "Fund crawler running log=%s stale_closed=%s; fund %02d:%02d stock %02d:%02d "
         "holdings %s %02d:%02d index close %02d:%02d",
         log_file,
+        closed,
         fp_settings.crawler_cron_hour(),
         fp_settings.crawler_cron_minute(),
         fp_settings.stock_daily_cron_hour(),

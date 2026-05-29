@@ -385,6 +385,8 @@ def fetch_a_share_spot(*, max_attempts: int = 6) -> tuple[list[dict[str, Any]], 
         return rows, "eastmoney"
 
     source = "sina"
+    if not fp_settings.stock_daily_em_enrich_enabled():
+        return rows, source
     try:
         em_rows = fetch_a_share_spot_em(max_attempts=1)
         if em_rows:
@@ -453,6 +455,87 @@ def count_stock_daily(conn, trade_date: date) -> int:
     return int(row[0] if row else 0)
 
 
+_STOCK_DAILY_UPSERT_SQL = """
+    INSERT INTO stock_daily (
+      trade_date, code, name, price, change_pct,
+      float_market_cap, total_market_cap, turnover_pct, amount,
+      pe_dynamic, pb, volume_ratio, amplitude_pct,
+      change_5m_pct, speed_pct, change_60d_pct, change_ytd_pct,
+      updated_at
+    )
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+      name = VALUES(name),
+      price = VALUES(price),
+      change_pct = VALUES(change_pct),
+      float_market_cap = VALUES(float_market_cap),
+      total_market_cap = VALUES(total_market_cap),
+      turnover_pct = VALUES(turnover_pct),
+      amount = VALUES(amount),
+      pe_dynamic = VALUES(pe_dynamic),
+      pb = VALUES(pb),
+      volume_ratio = VALUES(volume_ratio),
+      amplitude_pct = VALUES(amplitude_pct),
+      change_5m_pct = VALUES(change_5m_pct),
+      speed_pct = VALUES(speed_pct),
+      change_60d_pct = VALUES(change_60d_pct),
+      change_ytd_pct = VALUES(change_ytd_pct),
+      updated_at = VALUES(updated_at)
+"""
+
+
+def _stock_daily_row_params(td_s: str, payload: list[dict[str, Any]], now: str) -> list[tuple[Any, ...]]:
+    return [
+        (
+            td_s,
+            r["code"],
+            r["name"],
+            r["price"],
+            r["change_pct"],
+            r["float_market_cap"],
+            r["total_market_cap"],
+            r["turnover_pct"],
+            r["amount"],
+            r["pe_dynamic"],
+            r["pb"],
+            r["volume_ratio"],
+            r["amplitude_pct"],
+            r["change_5m_pct"],
+            r["speed_pct"],
+            r["change_60d_pct"],
+            r["change_ytd_pct"],
+            now,
+        )
+        for r in payload
+    ]
+
+
+def _upsert_stock_daily(cur, td_s: str, payload: list[dict[str, Any]], *, now: str) -> None:
+    chunk = fp_settings.stock_daily_db_chunk_size()
+    params = _stock_daily_row_params(td_s, payload, now)
+    for i in range(0, len(params), chunk):
+        cur.executemany(_STOCK_DAILY_UPSERT_SQL, params[i : i + chunk])
+
+
+def _prune_stock_daily_codes(cur, td_s: str, keep_codes: set[str]) -> int:
+    cur.execute("SELECT code FROM stock_daily WHERE trade_date = %s", (td_s,))
+    existing = {str(row[0]).zfill(6) for row in cur.fetchall()}
+    to_remove = sorted(existing - keep_codes)
+    if not to_remove:
+        return 0
+    chunk = fp_settings.stock_daily_db_chunk_size()
+    removed = 0
+    for i in range(0, len(to_remove), chunk):
+        part = to_remove[i : i + chunk]
+        placeholders = ",".join(["%s"] * len(part))
+        cur.execute(
+            f"DELETE FROM stock_daily WHERE trade_date = %s AND code IN ({placeholders})",
+            (td_s, *part),
+        )
+        removed += len(part)
+    return removed
+
+
 def sync_stock_daily(trade_date: Optional[date] = None) -> dict[str, Any]:
     td = trade_date or _trade_date_today()
     td_s = td.isoformat()
@@ -469,59 +552,40 @@ def sync_stock_daily(trade_date: Optional[date] = None) -> dict[str, Any]:
             (td_s, _utc_now_iso()),
         )
         job_id = cur.lastrowid
+        raw.commit()
 
+        logger.info("stock_daily fetch start trade_date=%s job_id=%s", td_s, job_id)
         payload, source = fetch_a_share_spot()
         if len(payload) < _MIN_ROWS_OK:
             raise RuntimeError(f"stock spot rows too few: {len(payload)}")
+        logger.info(
+            "stock_daily fetch done trade_date=%s rows=%s source=%s",
+            td_s,
+            len(payload),
+            source,
+        )
 
         now = _utc_now_iso()
-        cur.execute("DELETE FROM stock_daily WHERE trade_date = %s", (td_s,))
-        params = [
-            (
-                td_s,
-                r["code"],
-                r["name"],
-                r["price"],
-                r["change_pct"],
-                r["float_market_cap"],
-                r["total_market_cap"],
-                r["turnover_pct"],
-                r["amount"],
-                r["pe_dynamic"],
-                r["pb"],
-                r["volume_ratio"],
-                r["amplitude_pct"],
-                r["change_5m_pct"],
-                r["speed_pct"],
-                r["change_60d_pct"],
-                r["change_ytd_pct"],
-                now,
-            )
-            for r in payload
-        ]
-        cur.executemany(
-            """
-            INSERT INTO stock_daily (
-              trade_date, code, name, price, change_pct,
-              float_market_cap, total_market_cap, turnover_pct, amount,
-              pe_dynamic, pb, volume_ratio, amplitude_pct,
-              change_5m_pct, speed_pct, change_60d_pct, change_ytd_pct,
-              updated_at
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            params,
-        )
+        keep_codes = {str(r["code"]).zfill(6) for r in payload}
+        logger.info("stock_daily db write start trade_date=%s", td_s)
+        _upsert_stock_daily(cur, td_s, payload, now=now)
+        pruned = _prune_stock_daily_codes(cur, td_s, keep_codes)
         cur.execute(
             """
             UPDATE stock_daily_jobs
             SET finished_at = %s, ok = 1, row_count = %s, error = NULL
             WHERE id = %s
             """,
-            (_utc_now_iso(), len(payload), job_id),
+            (now, len(payload), job_id),
         )
         raw.commit()
-        logger.info("stock_daily sync OK %s rows=%s source=%s", td_s, len(payload), source)
+        logger.info(
+            "stock_daily sync OK %s rows=%s pruned=%s source=%s",
+            td_s,
+            len(payload),
+            pruned,
+            source,
+        )
         return {
             "ok": True,
             "trade_date": td_s,
@@ -533,18 +597,23 @@ def sync_stock_daily(trade_date: Optional[date] = None) -> dict[str, Any]:
         err = f"{exc}\n{traceback.format_exc()}"
         logger.exception("sync_stock_daily failed")
         if job_id is not None:
-            cur.execute(
-                """
-                UPDATE stock_daily_jobs
-                SET finished_at = %s, ok = 0, error = %s
-                WHERE id = %s
-                """,
-                (_utc_now_iso(), err[:4000], job_id),
-            )
-        try:
-            raw.commit()
-        except Exception:
-            raw.rollback()
+            try:
+                cur.execute(
+                    """
+                    UPDATE stock_daily_jobs
+                    SET finished_at = %s, ok = 0, error = %s
+                    WHERE id = %s
+                    """,
+                    (_utc_now_iso(), err[:4000], job_id),
+                )
+                raw.commit()
+            except Exception:
+                raw.rollback()
+        else:
+            try:
+                raw.rollback()
+            except Exception:
+                pass
         return {"ok": False, "trade_date": td_s, "error": str(exc), "job_id": job_id}
     finally:
         try:
