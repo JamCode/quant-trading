@@ -254,13 +254,21 @@ def api_market_indices(
     conn=Depends(get_conn),
     trade_date: Optional[str] = Query(default=None),
     region: str = Query(default="all"),
+    live: bool = Query(default=True),
 ):
-    items, td = market_index_queries.list_market_indices(
-        conn, trade_date=trade_date, region=region
+    items, td, quote_time = market_index_queries.list_market_indices(
+        conn, trade_date=trade_date, region=region, live=live
     )
-    out: dict[str, Any] = {"region": region, "items": items, "latest_per_code": trade_date is None}
+    out: dict[str, Any] = {
+        "region": region,
+        "items": items,
+        "latest_per_code": trade_date is None,
+        "live": live,
+    }
     if td:
         out["trade_date"] = td
+    if quote_time:
+        out["quote_time"] = quote_time
     return out
 
 
@@ -269,15 +277,21 @@ def api_market_index_detail(
     code: str,
     conn=Depends(get_conn),
     trade_date: Optional[str] = Query(default=None),
+    live: bool = Query(default=True),
 ):
     sym = code.strip()
     if not sym:
         raise HTTPException(status_code=404, detail="unknown index code")
-    snap = market_index_queries.query_market_index_snapshot(conn, sym, trade_date=trade_date)
+    snap = market_index_queries.query_market_index_snapshot(
+        conn, sym, trade_date=trade_date, live=live
+    )
     if not snap:
         raise HTTPException(status_code=404, detail="no snapshot for index on trade date")
     td = trade_date or snap.get("trade_date")
-    return {"snapshot": snap, "trade_date": td}
+    out: dict[str, Any] = {"snapshot": snap, "trade_date": td, "live": live}
+    if snap.get("quote_time"):
+        out["quote_time"] = snap["quote_time"]
+    return out
 
 
 @app.get("/api/market-indices/{code}/history")

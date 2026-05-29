@@ -10,13 +10,18 @@ from typing import Any
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fund_platform import settings as fp_settings
 from fund_platform.crawler_jobs import close_stale_runs, run_scheduled_job, upsert_task_catalog
 from fund_platform.crawler_logging import setup_crawler_logging
 from fund_platform.fund_holdings_sync import run_fund_industry_pipeline
 from fund_platform.index_valuation import sync_index_valuation_daily
 from fund_platform.industry_pe import sync_industry_pe_cninfo_daily
-from fund_platform.market_index import sync_market_index_daily_close
+from fund_platform.market_index import (
+    is_cn_equity_trading_session,
+    sync_market_index_daily_close,
+    sync_market_index_intraday_cn,
+)
 from fund_platform.stock_daily import sync_stock_daily
 from fund_platform.sync import sync_catalog_mysql
 
@@ -25,6 +30,22 @@ logger = logging.getLogger(__name__)
 
 def _scheduled(job_id: str, fn: Callable[[], dict[str, Any]]) -> Callable[[], None]:
     def wrapper() -> None:
+        run_scheduled_job(job_id, fn)
+
+    return wrapper
+
+
+def _scheduled_when(
+    job_id: str,
+    fn: Callable[[], dict[str, Any]],
+    *,
+    when: Callable[[], bool],
+) -> Callable[[], None]:
+    """Run job only when ``when()`` is true (no DB run row when skipped)."""
+
+    def wrapper() -> None:
+        if not when():
+            return
         run_scheduled_job(job_id, fn)
 
     return wrapper
@@ -40,6 +61,10 @@ def _run_stock_daily_job() -> dict[str, Any]:
 
 def _run_fund_holdings_job() -> dict[str, Any]:
     return run_fund_industry_pipeline()
+
+
+def _run_market_index_intraday_cn_job() -> dict[str, Any]:
+    return sync_market_index_intraday_cn()
 
 
 def _run_market_index_daily_cn_job() -> dict[str, Any]:
@@ -111,6 +136,21 @@ def main() -> None:
         coalesce=True,
     )
     registered.add("fund_holdings_pipeline")
+
+    intraday_mins = fp_settings.market_index_intraday_cn_interval_minutes()
+    scheduler.add_job(
+        _scheduled_when(
+            "market_index_intraday_cn",
+            _run_market_index_intraday_cn_job,
+            when=is_cn_equity_trading_session,
+        ),
+        IntervalTrigger(minutes=intraday_mins),
+        id="market_index_intraday_cn",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    registered.add("market_index_intraday_cn")
 
     scheduler.add_job(
         _scheduled("market_index_daily_cn", _run_market_index_daily_cn_job),
@@ -187,7 +227,7 @@ def main() -> None:
 
     logger.info(
         "Fund crawler running log=%s stale_closed=%s; fund %02d:%02d stock %02d:%02d "
-        "holdings %s %02d:%02d index close %02d:%02d",
+        "holdings %s %02d:%02d index intraday %sm index close %02d:%02d",
         log_file,
         closed,
         fp_settings.crawler_cron_hour(),
@@ -197,6 +237,7 @@ def main() -> None:
         fp_settings.fund_holdings_cron_day_of_week(),
         fp_settings.fund_holdings_cron_hour(),
         fp_settings.fund_holdings_cron_minute(),
+        intraday_mins,
         fp_settings.market_index_daily_cron_hour(),
         fp_settings.market_index_daily_cron_minute(),
     )

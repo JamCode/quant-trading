@@ -35,8 +35,10 @@ function fmtAmount(value) {
 }
 
 function snapshotGrid(snap) {
+  const priceKey = snap.live ? "现价" : "收盘";
+  const priceVal = snap.live && snap.last_price != null ? snap.last_price : snap.close_px;
   const fields = [
-    ["收盘", fmtNum(snap.close_px)],
+    [priceKey, fmtNum(priceVal)],
     ["涨跌幅", fmtPct(snap.change_pct)],
     ["开盘", fmtNum(snap.open_px)],
     ["最高", fmtNum(snap.high_px)],
@@ -73,14 +75,17 @@ export async function mountIndexDetail(code) {
   }
   host.innerHTML = '<p class="loading">加载中…</p>';
   try {
-    const detail = await apiGet(`/market-indices/${encodeURIComponent(code)}`);
+    const detail = await apiGet(`/market-indices/${encodeURIComponent(code)}`, { live: "1" });
     const snap = detail.snapshot || {};
     const name = snap.name || code;
     const td = detail.trade_date || snap.trade_date || "";
+    const liveMeta = snap.live && detail.quote_time
+      ? `盘中 ${escapeHtml(detail.quote_time)}`
+      : `快照数据日 ${escapeHtml(td)}`;
 
     host.innerHTML = `<p class="sub"><a href="#" id="indices-back">← 指数行情</a></p>
       <h2 class="view-heading">${escapeHtml(name)} <code>${escapeHtml(code)}</code></h2>
-      <p class="meta">快照数据日 ${escapeHtml(td)}</p>
+      <p class="meta">${liveMeta}</p>
       ${snapshotGrid(snap)}
       <section class="panel" id="index-kline-panel">
         <p class="meta" id="index-chart-meta">加载全部历史走势…</p>

@@ -206,7 +206,17 @@ def market_index_codes() -> list[str]:
 
 
 def market_index_interval_minutes() -> int:
-    return max(1, int(os.environ.get("MARKET_INDEX_INTERVAL_MINUTES", "5")))
+    """Legacy alias; prefer market_index_intraday_cn_interval_minutes()."""
+    return market_index_intraday_cn_interval_minutes()
+
+
+def market_index_intraday_cn_interval_minutes() -> int:
+    """A-share index intraday poll interval during trading session."""
+    raw = os.environ.get(
+        "MARKET_INDEX_INTRADAY_CN_INTERVAL_MINUTES",
+        os.environ.get("MARKET_INDEX_INTERVAL_MINUTES", "1"),
+    )
+    return max(1, int(raw))
 
 
 def market_index_request_delay_sec() -> float:

@@ -532,6 +532,35 @@ def _upsert_daily_rows(rows: list[dict[str, Any]], trade_date: str) -> None:
         raw.close()
 
 
+def sync_market_index_intraday_cn(*, force: bool = False) -> dict[str, Any]:
+    """A-share watchlist spot snapshot (one East Money page) for intraday table."""
+    now = _now_cn()
+    if not (force or is_cn_equity_trading_session(now)):
+        return {"ok": True, "skipped": True, "reason": "outside_cn_trading_session"}
+
+    quote_time = now.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        cn_rows = _filter_cn_watchlist(fetch_main_indices_em())
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("market index CN intraday failed")
+        return {"ok": False, "error": str(exc), "quote_time": quote_time}
+
+    if not cn_rows:
+        return {"ok": True, "skipped": True, "reason": "no_cn_rows", "quote_time": quote_time}
+
+    try:
+        _insert_intraday_rows(cn_rows, quote_time)
+        logger.info(
+            "market_index_intraday_cn ok time=%s count=%s",
+            quote_time,
+            len(cn_rows),
+        )
+        return {"ok": True, "quote_time": quote_time, "count": len(cn_rows)}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("market_index_intraday_cn insert failed")
+        return {"ok": False, "error": str(exc), "quote_time": quote_time}
+
+
 def sync_market_index_intraday(*, force: bool = False) -> dict[str, Any]:
     """A股盘中 + 全球指数工作日快照。"""
     now = _now_cn()

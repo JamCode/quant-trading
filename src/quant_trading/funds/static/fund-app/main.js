@@ -10,7 +10,7 @@ import { mountFunds } from "./views/funds.js";
 import { mountSectors } from "./views/sectors.js";
 import { mountValuation } from "./views/valuation.js";
 import { mountIndexDetail } from "./views/index-detail.js";
-import { mountIndices } from "./views/indices.js";
+import { mountIndices, unmountIndices } from "./views/indices.js";
 import { mountStockDetail } from "./views/stock-detail.js";
 import { mountStocks } from "./views/stocks.js";
 import { mountHoldingsLookup } from "./views/holdings-lookup.js";
@@ -81,6 +81,7 @@ function handleDrawerQuery(query) {
 }
 
 async function onRoute({ path, query }) {
+  unmountIndices();
   const normalized = path === "" ? "/" : path;
   renderSidebar(normalized);
   setTitle(normalized);

@@ -67,6 +67,9 @@ def _schedule_summary(task_key: str) -> str:
             f"每周 {dow} {fp_settings.fund_holdings_cron_hour():02d}:"
             f"{fp_settings.fund_holdings_cron_minute():02d}"
         )
+    if task_key == "market_index_intraday_cn":
+        mins = fp_settings.market_index_intraday_cn_interval_minutes()
+        return f"A 股交易日盘中 每 {mins} 分钟"
     if task_key == "market_index_daily_cn":
         return (
             f"周一至周五 {fp_settings.market_index_daily_cron_hour():02d}:"
@@ -136,6 +139,7 @@ def _all_task_keys() -> tuple[str, ...]:
         "fund_mysql_daily_sync",
         "stock_daily_sync",
         "fund_holdings_pipeline",
+        "market_index_intraday_cn",
         "market_index_daily_cn",
         "market_index_daily_hk",
         "market_index_daily_global",
