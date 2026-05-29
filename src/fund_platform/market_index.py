@@ -131,6 +131,26 @@ def is_cn_equity_trading_session(now: Optional[datetime] = None) -> bool:
     )
 
 
+def is_hk_equity_trading_session(now: Optional[datetime] = None) -> bool:
+    """Mon–Fri 09:30–12:00, 13:00–16:00 Hong Kong (Asia/Shanghai clock)."""
+    t = now or _now_cn()
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=_CN_TZ)
+    else:
+        t = t.astimezone(_CN_TZ)
+    if t.weekday() >= 5:
+        return False
+    cur = t.time()
+    return (dt_time(9, 30) <= cur <= dt_time(12, 0)) or (
+        dt_time(13, 0) <= cur <= dt_time(16, 0)
+    )
+
+
+def is_index_intraday_poll_window(now: Optional[datetime] = None) -> bool:
+    """Run intraday crawler when A-share or HK index market is open."""
+    return is_cn_equity_trading_session(now) or is_hk_equity_trading_session(now)
+
+
 def _opt_float(value: Any) -> Optional[float]:
     if value is None:
         return None
@@ -533,32 +553,53 @@ def _upsert_daily_rows(rows: list[dict[str, Any]], trade_date: str) -> None:
 
 
 def sync_market_index_intraday_cn(*, force: bool = False) -> dict[str, Any]:
-    """A-share watchlist spot snapshot (one East Money page) for intraday table."""
+    """A-share + HK watchlist spot snapshots for intraday table."""
     now = _now_cn()
-    if not (force or is_cn_equity_trading_session(now)):
-        return {"ok": True, "skipped": True, "reason": "outside_cn_trading_session"}
+    cn_open = force or is_cn_equity_trading_session(now)
+    hk_open = force or is_hk_equity_trading_session(now)
+    if not cn_open and not hk_open:
+        return {"ok": True, "skipped": True, "reason": "outside_trading_session"}
 
     quote_time = now.strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        cn_rows = _filter_cn_watchlist(fetch_main_indices_em())
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("market index CN intraday failed")
-        return {"ok": False, "error": str(exc), "quote_time": quote_time}
+    rows: list[dict[str, Any]] = []
+    parts: dict[str, Any] = {}
 
-    if not cn_rows:
-        return {"ok": True, "skipped": True, "reason": "no_cn_rows", "quote_time": quote_time}
+    if cn_open:
+        try:
+            cn_rows = _filter_cn_watchlist(fetch_main_indices_em())
+            rows.extend(cn_rows)
+            parts["cn"] = len(cn_rows)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("market index CN intraday failed")
+            return {"ok": False, "error": str(exc), "quote_time": quote_time, "parts": parts}
+
+    if hk_open and hk_watchlist():
+        try:
+            hk_rows = _filter_hk_watchlist(fetch_global_indices_em())
+            rows.extend(hk_rows)
+            parts["hk"] = len(hk_rows)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("market index HK intraday failed: %s", exc)
+            parts["hk_error"] = str(exc)
+
+    if not rows:
+        return {"ok": True, "skipped": True, "reason": "no_rows", "quote_time": quote_time, "parts": parts}
 
     try:
-        _insert_intraday_rows(cn_rows, quote_time)
+        _insert_intraday_rows(rows, quote_time)
         logger.info(
-            "market_index_intraday_cn ok time=%s count=%s",
+            "market_index_intraday_cn ok time=%s count=%s parts=%s",
             quote_time,
-            len(cn_rows),
+            len(rows),
+            parts,
         )
-        return {"ok": True, "quote_time": quote_time, "count": len(cn_rows)}
+        out: dict[str, Any] = {"ok": True, "quote_time": quote_time, "count": len(rows)}
+        if parts:
+            out["parts"] = parts
+        return out
     except Exception as exc:  # noqa: BLE001
         logger.exception("market_index_intraday_cn insert failed")
-        return {"ok": False, "error": str(exc), "quote_time": quote_time}
+        return {"ok": False, "error": str(exc), "quote_time": quote_time, "parts": parts}
 
 
 def sync_market_index_intraday(*, force: bool = False) -> dict[str, Any]:

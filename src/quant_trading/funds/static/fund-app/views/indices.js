@@ -72,7 +72,7 @@ function renderTable(data) {
       '<tr><td colspan="8">暂无指数数据，请确认 <code>market_index_intraday_cn</code> / <code>market_index_daily_*</code> 爬虫已运行</td></tr>';
   }
 
-  const qt = data.quote_time ? ` · A 股盘中更新 ${escapeHtml(data.quote_time)}` : "";
+  const qt = data.quote_time ? ` · A 股/港股盘中更新 ${escapeHtml(data.quote_time)}` : "";
   const td = data.trade_date ? ` · 日 K 数据日 ${escapeHtml(data.trade_date)}` : "";
 
   return `<p class="sub meta" id="indices-meta">共 ${items.length} 只指数${qt}${td} · 盘中行情来自 <code>market_index_intraday</code></p>

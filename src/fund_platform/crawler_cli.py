@@ -18,7 +18,7 @@ from fund_platform.fund_holdings_sync import run_fund_industry_pipeline
 from fund_platform.index_valuation import sync_index_valuation_daily
 from fund_platform.industry_pe import sync_industry_pe_cninfo_daily
 from fund_platform.market_index import (
-    is_cn_equity_trading_session,
+    is_index_intraday_poll_window,
     sync_market_index_daily_close,
     sync_market_index_intraday_cn,
 )
@@ -160,7 +160,7 @@ def main() -> None:
         _scheduled_when(
             "market_index_intraday_cn",
             _run_market_index_intraday_cn_job,
-            when=is_cn_equity_trading_session,
+            when=is_index_intraday_poll_window,
         ),
         IntervalTrigger(minutes=intraday_mins),
         id="market_index_intraday_cn",

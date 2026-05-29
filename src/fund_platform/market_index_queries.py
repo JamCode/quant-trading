@@ -8,7 +8,10 @@ from zoneinfo import ZoneInfo
 
 import pymysql.cursors
 
-from fund_platform.market_index import is_cn_equity_trading_session
+from fund_platform.market_index import (
+    is_cn_equity_trading_session,
+    is_hk_equity_trading_session,
+)
 
 _CN_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -111,7 +114,12 @@ def _now_cn() -> datetime:
     return datetime.now(_CN_TZ)
 
 
-def intraday_quote_is_live(quote_time: str, *, now: Optional[datetime] = None) -> bool:
+def intraday_quote_is_live(
+    quote_time: str,
+    *,
+    region: str = _REGION_CN,
+    now: Optional[datetime] = None,
+) -> bool:
     """Treat intraday row as live quote for UI (today, session or before daily close job)."""
     t = now or _now_cn()
     if t.tzinfo is None:
@@ -123,17 +131,29 @@ def intraday_quote_is_live(quote_time: str, *, now: Optional[datetime] = None) -
         return False
     if not qt.startswith(t.date().isoformat()):
         return False
+    reg = (region or _REGION_CN).lower()
+    if reg == _REGION_HK:
+        if is_hk_equity_trading_session(t):
+            return True
+        # Same-day after HK close (16:00) until daily HK sync (~17:00).
+        return t.hour < 17 or (t.hour == 17 and t.minute < 30)
     if is_cn_equity_trading_session(t):
         return True
-    # Same-day snapshot after 15:00 until daily close sync (~17:00).
     return t.hour < 17 or (t.hour == 17 and t.minute < 30)
 
 
-def query_latest_cn_intraday(conn) -> list[dict[str, Any]]:
-    """Latest intraday snapshot per A-share index code."""
+def _intraday_code_key(code: str, region: str) -> str:
+    if region == _REGION_CN:
+        return str(code).zfill(6)
+    return str(code).strip().upper()
+
+
+def query_latest_intraday(conn) -> list[dict[str, Any]]:
+    """Latest intraday snapshot per A-share / HK index code."""
+    hk_list = ",".join(f"'{c}'" for c in sorted(_HK_CODES))
     cur = _cursor(conn)
     cur.execute(
-        """
+        f"""
         SELECT i.quote_time, i.code, i.name, i.last_price, i.change_pct, i.change_amt,
                i.open_px, i.high_px, i.low_px, i.prev_close, i.volume, i.amount,
                i.amplitude_pct
@@ -141,7 +161,7 @@ def query_latest_cn_intraday(conn) -> list[dict[str, Any]]:
         INNER JOIN (
             SELECT code, MAX(quote_time) AS max_qt
             FROM market_index_intraday
-            WHERE code REGEXP '^[0-9]{6}$'
+            WHERE code REGEXP '^[0-9]{{6}}$' OR code IN ({hk_list})
             GROUP BY code
         ) latest ON i.code = latest.code AND i.quote_time = latest.max_qt
         ORDER BY i.code ASC
@@ -150,22 +170,27 @@ def query_latest_cn_intraday(conn) -> list[dict[str, Any]]:
     return [_serialize_row(r) for r in cur.fetchall()]
 
 
-def merge_cn_intraday_live(
+def merge_intraday_live(
     items: list[dict[str, Any]],
     live_rows: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], Optional[str]]:
-    """Overlay today's intraday quotes onto A-share index list rows."""
-    by_code = {str(r.get("code", "")).zfill(6): r for r in live_rows}
+    """Overlay today's intraday quotes onto A-share / HK index list rows."""
+    by_code: dict[str, dict[str, Any]] = {}
+    for row in live_rows:
+        reg = classify_index_region(str(row.get("code") or ""))
+        by_code[_intraday_code_key(str(row.get("code") or ""), reg)] = row
+
     latest_qt: Optional[str] = None
     for item in items:
-        if item.get("region") != _REGION_CN:
+        reg = item.get("region")
+        if reg not in (_REGION_CN, _REGION_HK):
             continue
-        code = str(item.get("code", "")).zfill(6)
+        code = _intraday_code_key(str(item.get("code") or ""), reg)
         live = by_code.get(code)
         if not live:
             continue
         qt = str(live.get("quote_time") or "")
-        if not intraday_quote_is_live(qt):
+        if not intraday_quote_is_live(qt, region=reg):
             continue
         if latest_qt is None or qt > latest_qt:
             latest_qt = qt
@@ -240,16 +265,20 @@ def list_market_indices(
 
     items.sort(key=_sort_key)
     quote_time: Optional[str] = None
-    if live and not trade_date and reg in ("all", _REGION_CN):
-        live_rows = query_latest_cn_intraday(conn)
-        items, quote_time = merge_cn_intraday_live(items, live_rows)
+    if live and not trade_date and reg in ("all", _REGION_CN, _REGION_HK):
+        live_rows = query_latest_intraday(conn)
+        items, quote_time = merge_intraday_live(items, live_rows)
     return items, td, quote_time
 
 
-def query_cn_intraday_snapshot(conn, code: str) -> Optional[dict[str, Any]]:
-    sym = code.strip().zfill(6)
-    if not sym.isdigit() or len(sym) != 6:
+def query_intraday_snapshot(conn, code: str) -> Optional[dict[str, Any]]:
+    sym = code.strip()
+    if not sym:
         return None
+    region = classify_index_region(sym)
+    if region not in (_REGION_CN, _REGION_HK):
+        return None
+    db_code = sym.zfill(6) if region == _REGION_CN else sym.upper()
     cur = _cursor(conn)
     cur.execute(
         """
@@ -260,14 +289,14 @@ def query_cn_intraday_snapshot(conn, code: str) -> Optional[dict[str, Any]]:
         ORDER BY quote_time DESC
         LIMIT 1
         """,
-        (sym,),
+        (db_code,),
     )
     row = cur.fetchone()
     if not row:
         return None
     snap = _serialize_row(row)
     qt = str(snap.get("quote_time") or "")
-    if not intraday_quote_is_live(qt):
+    if not intraday_quote_is_live(qt, region=region):
         return None
     snap["live"] = True
     snap["close_px"] = snap.get("last_price")
@@ -285,8 +314,8 @@ def query_market_index_snapshot(
     sym = code.strip()
     if not sym:
         return None
-    if live and not trade_date and classify_index_region(sym) == _REGION_CN:
-        intraday = query_cn_intraday_snapshot(conn, sym)
+    if live and not trade_date and classify_index_region(sym) in (_REGION_CN, _REGION_HK):
+        intraday = query_intraday_snapshot(conn, sym)
         if intraday:
             return intraday
     cur = _cursor(conn)
