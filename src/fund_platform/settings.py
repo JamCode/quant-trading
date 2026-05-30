@@ -208,6 +208,40 @@ def hk_stock_basic_enrich_delay_sec() -> float:
     return max(0.2, float(os.environ.get("HK_STOCK_BASIC_ENRICH_DELAY_SEC", "0.5")))
 
 
+def us_stock_daily_db_chunk_size() -> int:
+    return max(100, min(int(os.environ.get("US_STOCK_DAILY_DB_CHUNK", "500")), 2000))
+
+
+def us_stock_daily_page_delay_sec() -> float:
+    return max(0.0, float(os.environ.get("US_STOCK_DAILY_PAGE_DELAY_SEC", "0.35")))
+
+
+def us_stock_daily_retry_sleep_sec() -> float:
+    return max(1.0, float(os.environ.get("US_STOCK_DAILY_RETRY_SLEEP_SEC", "8")))
+
+
+def us_stock_sina_fallback_enabled() -> bool:
+    return os.environ.get("US_STOCK_SINA_FALLBACK", "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def us_stock_daily_cron_hour() -> int:
+    """Beijing time; default after US close (~08:35, post global index job)."""
+    return int(os.environ.get("US_STOCK_DAILY_CRON_HOUR", "8"))
+
+
+def us_stock_daily_cron_minute() -> int:
+    return int(os.environ.get("US_STOCK_DAILY_CRON_MINUTE", "35"))
+
+
+def us_stock_daily_cron_day_of_week() -> str:
+    """Mon–Sat morning run (Fri close available Sat AM Beijing)."""
+    return os.environ.get("US_STOCK_DAILY_CRON_DOW", "mon-sat")
+
+
 def crawler_stale_run_hours() -> float:
     """Mark ``running`` rows older than this as failed (startup / new run)."""
     return max(0.5, float(os.environ.get("CRAWLER_STALE_RUN_HOURS", "6")))
