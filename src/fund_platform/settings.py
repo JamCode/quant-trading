@@ -221,8 +221,8 @@ def us_stock_daily_retry_sleep_sec() -> float:
 
 
 def us_stock_sina_fallback_enabled() -> bool:
-    """Sina full scan is ~20 min; keep off unless EM is permanently blocked."""
-    return os.environ.get("US_STOCK_SINA_FALLBACK", "0").strip().lower() in (
+    """Sina full scan ~15–25 min; required when East Money push2 is blocked (ECS)."""
+    return os.environ.get("US_STOCK_SINA_FALLBACK", "1").strip().lower() in (
         "1",
         "true",
         "yes",
