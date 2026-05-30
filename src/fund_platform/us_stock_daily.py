@@ -27,11 +27,13 @@ logger = logging.getLogger(__name__)
 _MIN_ROWS_OK = 2500
 _US_TZ = ZoneInfo("America/New_York")
 
-_EM_US_FS = "m:105,m:106,m:107"
+# NYSE / NASDAQ / AMEX — fetch separately (smaller pages, more reliable on ECS).
+_EM_US_SEGMENTS = ("m:105", "m:106", "m:107")
 _EM_URLS = (
-    "https://72.push2.eastmoney.com/api/qt/clist/get",
+    "https://33.push2.eastmoney.com/api/qt/clist/get",
+    "https://48.push2.eastmoney.com/api/qt/clist/get",
     "https://63.push2.eastmoney.com/api/qt/clist/get",
-    "https://81.push2.eastmoney.com/api/qt/clist/get",
+    "https://72.push2.eastmoney.com/api/qt/clist/get",
     "https://push2.eastmoney.com/api/qt/clist/get",
 )
 _HEADERS = {
@@ -122,7 +124,7 @@ def _row_from_em_record(rec: dict[str, Any]) -> Optional[dict[str, Any]]:
     }
 
 
-def _fetch_us_spot_em_dataframe():
+def _fetch_us_spot_em_dataframe_for_fs(fs: str):
     import pandas as pd
 
     params = {
@@ -134,7 +136,9 @@ def _fetch_us_spot_em_dataframe():
         "fltt": "2",
         "invt": "2",
         "fid": "f12",
-        "fs": _EM_US_FS,
+        "fs": fs,
+        "dect": "1",
+        "wbp2u": "|0|0|0|web",
         "fields": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,"
         "f21,f23,f24,f25,f26,f22,f33,f11,f62,f128,f136,f115,f152",
     }
@@ -142,7 +146,7 @@ def _fetch_us_spot_em_dataframe():
     def _page_json(pn: int) -> dict:
         p = {**params, "pn": str(pn)}
         last: Optional[Exception] = None
-        for attempt in range(3):
+        for attempt in range(4):
             for url in _EM_URLS:
                 try:
                     r = requests.get(url, params=p, headers=_HEADERS, timeout=45)
@@ -171,9 +175,9 @@ def _fetch_us_spot_em_dataframe():
             frames.append(pd.DataFrame(_page_json(pn).get("data", {}).get("diff") or []))
     except Exception as exc:  # noqa: BLE001
         partial = sum(len(f) for f in frames)
-        if partial < _MIN_ROWS_OK:
+        if partial < 500:
             raise exc
-        logger.warning("em us spot partial pages ok rows=%s: %s", partial, exc)
+        logger.warning("em us spot partial fs=%s rows=%s: %s", fs, partial, exc)
     df = pd.concat(frames, ignore_index=True)
     names = [
         "index",
@@ -218,8 +222,25 @@ def _fetch_us_spot_em_dataframe():
         else:
             names = names[:ncol]
     df.columns = names
-    df["代码"] = df["编码"].astype(str) + "." + df["简称"].astype(str)
+    if "编码" in df.columns and "简称" in df.columns:
+        df["代码"] = df["编码"].astype(str) + "." + df["简称"].astype(str)
     return df
+
+
+def _fetch_us_spot_em_dataframe():
+    import pandas as pd
+
+    frames = []
+    for fs in _EM_US_SEGMENTS:
+        part = _fetch_us_spot_em_dataframe_for_fs(fs)
+        if not part.empty:
+            frames.append(part)
+        seg_delay = fp_settings.us_stock_daily_page_delay_sec()
+        if seg_delay > 0:
+            time.sleep(seg_delay)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
 
 
 def _rows_from_em_df(df) -> list[dict[str, Any]]:
@@ -237,6 +258,11 @@ def fetch_us_spot_em(*, max_attempts: int = 2) -> list[dict[str, Any]]:
         try:
             df = _fetch_us_spot_em_dataframe()
             rows = _rows_from_em_df(df)
+            # Deduplicate tickers (segments may overlap).
+            by_code: dict[str, dict[str, Any]] = {}
+            for row in rows:
+                by_code[row["code"]] = row
+            rows = list(by_code.values())
             if len(rows) >= _MIN_ROWS_OK:
                 return rows
             raise RuntimeError(f"em us spot rows too few: {len(rows)}")
