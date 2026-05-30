@@ -24,6 +24,7 @@ from fund_platform.market_index import (
 )
 from fund_platform.sector_flow import sync_sector_fund_flow_daily
 from fund_platform.sector_market_cap import run_after_sector_flow
+from fund_platform.hk_stock_daily import sync_hk_stock_daily
 from fund_platform.stock_daily import sync_stock_daily
 from fund_platform.fund_stock_popularity import sync_fund_stock_popularity
 from fund_platform.sync import sync_catalog_mysql
@@ -60,6 +61,10 @@ def _run_job() -> dict[str, Any]:
 
 def _run_stock_daily_job() -> dict[str, Any]:
     return sync_stock_daily()
+
+
+def _run_hk_stock_daily_job() -> dict[str, Any]:
+    return sync_hk_stock_daily()
 
 
 def _run_sector_fund_flow_job() -> dict[str, Any]:
@@ -146,6 +151,20 @@ def main() -> None:
         coalesce=True,
     )
     registered.add("stock_daily_sync")
+
+    scheduler.add_job(
+        _scheduled("hk_stock_daily_sync", _run_hk_stock_daily_job),
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour=fp_settings.hk_stock_daily_cron_hour(),
+            minute=fp_settings.hk_stock_daily_cron_minute(),
+        ),
+        id="hk_stock_daily_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    registered.add("hk_stock_daily_sync")
 
     scheduler.add_job(
         _scheduled("sector_fund_flow_daily", _run_sector_fund_flow_job),

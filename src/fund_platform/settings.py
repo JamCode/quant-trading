@@ -172,6 +172,42 @@ def stock_daily_cron_minute() -> int:
     return int(os.environ.get("STOCK_DAILY_CRON_MINUTE", "10"))
 
 
+def hk_stock_daily_db_chunk_size() -> int:
+    return max(100, min(int(os.environ.get("HK_STOCK_DAILY_DB_CHUNK", "500")), 2000))
+
+
+def hk_stock_daily_page_delay_sec() -> float:
+    return max(0.0, float(os.environ.get("HK_STOCK_DAILY_PAGE_DELAY_SEC", "0.35")))
+
+
+def hk_stock_daily_retry_sleep_sec() -> float:
+    return max(1.0, float(os.environ.get("HK_STOCK_DAILY_RETRY_SLEEP_SEC", "8")))
+
+
+def hk_stock_daily_cron_hour() -> int:
+    return int(os.environ.get("HK_STOCK_DAILY_CRON_HOUR", "17"))
+
+
+def hk_stock_daily_cron_minute() -> int:
+    return int(os.environ.get("HK_STOCK_DAILY_CRON_MINUTE", "25"))
+
+
+def hk_stock_basic_enrich_enabled() -> bool:
+    return os.environ.get("HK_STOCK_BASIC_ENRICH", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def hk_stock_basic_enrich_max_per_run() -> int:
+    return max(0, int(os.environ.get("HK_STOCK_BASIC_ENRICH_MAX", "60")))
+
+
+def hk_stock_basic_enrich_delay_sec() -> float:
+    return max(0.2, float(os.environ.get("HK_STOCK_BASIC_ENRICH_DELAY_SEC", "0.5")))
+
+
 def crawler_stale_run_hours() -> float:
     """Mark ``running`` rows older than this as failed (startup / new run)."""
     return max(0.5, float(os.environ.get("CRAWLER_STALE_RUN_HOURS", "6")))

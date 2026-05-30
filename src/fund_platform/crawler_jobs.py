@@ -22,6 +22,7 @@ _STATUS_SKIPPED = "skipped"
 _LEGACY_TABLE_BY_PREFIX: list[tuple[str, str]] = [
     ("fund_mysql_", "sync_jobs"),
     ("stock_daily_", "stock_daily_jobs"),
+    ("hk_stock_daily_", "hk_stock_daily_jobs"),
     ("sector_fund_flow_", "sector_flow_jobs"),
     ("fund_holdings_", "fund_holdings_jobs"),
 ]
@@ -59,6 +60,11 @@ def _schedule_summary(task_key: str) -> str:
         return (
             f"每天 {fp_settings.stock_daily_cron_hour():02d}:"
             f"{fp_settings.stock_daily_cron_minute():02d}"
+        )
+    if task_key == "hk_stock_daily_sync":
+        return (
+            f"周一至周五 {fp_settings.hk_stock_daily_cron_hour():02d}:"
+            f"{fp_settings.hk_stock_daily_cron_minute():02d}（港股日终）"
         )
     if task_key == "sector_fund_flow_daily":
         return (
@@ -147,6 +153,7 @@ def _all_task_keys() -> tuple[str, ...]:
     return (
         "fund_mysql_daily_sync",
         "stock_daily_sync",
+        "hk_stock_daily_sync",
         "sector_fund_flow_daily",
         "fund_holdings_pipeline",
         "market_index_intraday_cn",
