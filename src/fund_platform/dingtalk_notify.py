@@ -43,7 +43,7 @@ def send_text_chunks(
     webhook: str,
     secret: str,
     content: str,
-    max_len: int = 3500,
+    max_len: int = 4500,
 ) -> list[dict[str, Any]]:
     """Split long text so each chunk stays under DingTalk limits."""
     text = content.strip()
