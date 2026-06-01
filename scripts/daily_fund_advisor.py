@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Daily portfolio brief: holdings JSON → DashScope (qwen-max) → DingTalk.
+"""Daily portfolio brief: holdings JSON → DashScope (web search) → DingTalk.
 
-Requires in project root .env:
+Requires in project root .env (or ECS fund-stack.env):
   DASHSCOPE_API_KEY, DINGTALK_WEBHOOK_URL, DINGTALK_SECRET
-Optional:
-  DATABASE_URL          enrich NAV/metrics from MySQL
-  QWEN_MODEL            default qwen-max
-  FUND_ADVISOR_ENABLE_SEARCH=1
-  PORTFOLIO_CONFIG      default config/portfolio_holdings.json
+
+Market/fund data comes only from model web search — no local MySQL injection.
 
 Usage:
   PYTHONPATH=src python3 scripts/daily_fund_advisor.py
-  PYTHONPATH=src python3 scripts/daily_fund_advisor.py --dry-run   # print only, no API
-  PYTHONPATH=src python3 scripts/daily_fund_advisor.py --no-push   # call model, stdout
+  PYTHONPATH=src python3 scripts/daily_fund_advisor.py --dry-run
+  PYTHONPATH=src python3 scripts/daily_fund_advisor.py --no-push
 """
 
 from __future__ import annotations
@@ -47,35 +44,13 @@ def main() -> None:
     if not holdings:
         raise SystemExit(f"No holdings in {config_path}")
 
-    snapshots: dict = {}
-    market_block = ""
-    db_url = os.environ.get("DATABASE_URL", "").strip()
-    if db_url:
-        try:
-            from fund_platform.db import get_engine
-
-            codes = [h["code"] for h in holdings]
-            with get_engine().connect() as conn:
-                raw = conn.connection
-                snapshots = portfolio_advisor.fetch_snapshots(raw, codes)
-                market_block = portfolio_advisor.fetch_market_context_block(raw)
-            print(f"Enriched {len(snapshots)}/{len(holdings)} funds from MySQL", file=sys.stderr)
-            if market_block:
-                print("Loaded market index snapshot block", file=sys.stderr)
-        except Exception as exc:
-            print(f"MySQL enrich skipped: {exc}", file=sys.stderr)
-    else:
-        print("DATABASE_URL not set — using holdings names only", file=sys.stderr)
-
-    prompt = portfolio_advisor.build_analysis_prompt(
-        holdings, snapshots, market_block=market_block
-    )
+    prompt = portfolio_advisor.build_analysis_prompt(holdings)
     if args.dry_run:
         print("=== PROMPT ===")
         print(prompt)
         return
 
-    print("Calling DashScope…", file=sys.stderr)
+    print("Calling DashScope (web search only, no DB)…", file=sys.stderr)
     analysis, usage = portfolio_advisor.call_qwen_analysis(prompt)
     print("usage:", usage, file=sys.stderr)
     message = portfolio_advisor.format_dingtalk_message(analysis)
