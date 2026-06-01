@@ -48,6 +48,7 @@ def main() -> None:
         raise SystemExit(f"No holdings in {config_path}")
 
     snapshots: dict = {}
+    market_block = ""
     db_url = os.environ.get("DATABASE_URL", "").strip()
     if db_url:
         try:
@@ -57,13 +58,18 @@ def main() -> None:
             with get_engine().connect() as conn:
                 raw = conn.connection
                 snapshots = portfolio_advisor.fetch_snapshots(raw, codes)
+                market_block = portfolio_advisor.fetch_market_context_block(raw)
             print(f"Enriched {len(snapshots)}/{len(holdings)} funds from MySQL", file=sys.stderr)
+            if market_block:
+                print("Loaded market index snapshot block", file=sys.stderr)
         except Exception as exc:
             print(f"MySQL enrich skipped: {exc}", file=sys.stderr)
     else:
         print("DATABASE_URL not set — using holdings names only", file=sys.stderr)
 
-    prompt = portfolio_advisor.build_analysis_prompt(holdings, snapshots)
+    prompt = portfolio_advisor.build_analysis_prompt(
+        holdings, snapshots, market_block=market_block
+    )
     if args.dry_run:
         print("=== PROMPT ===")
         print(prompt)
