@@ -50,11 +50,11 @@ def main() -> None:
             from fund_platform import index_quotes
 
             codes = [h["code"] for h in holdings]
-            quotes = index_quotes.fetch_index_quotes(codes)
-            index_block = index_quotes.format_index_quotes_block(holdings, quotes)
-            print(f"Fetched {len(quotes)} tracked-index quotes via akshare", file=sys.stderr)
+            navs = index_quotes.fetch_fund_navs(codes)
+            index_block = index_quotes.format_fund_nav_block(holdings, navs)
+            print(f"Fetched real NAV for {len(navs)}/{len(codes)} funds via akshare", file=sys.stderr)
         except Exception as exc:  # noqa: BLE001
-            print(f"Index quote fetch skipped: {exc}", file=sys.stderr)
+            print(f"Fund NAV fetch skipped: {exc}", file=sys.stderr)
 
     prompt = portfolio_advisor.build_analysis_prompt(holdings, index_quotes_block=index_block)
     if args.dry_run:

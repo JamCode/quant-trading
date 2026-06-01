@@ -1,42 +1,26 @@
-"""Fetch live tracked-index quotes (akshare + East Money) for the daily brief.
+"""Fetch each holding's own NAV snapshot via akshare (East Money fund site).
 
-The portfolio is almost all passive index/QDII funds, so a fund's daily move ≈
-its tracked index. We fetch those index quotes here and feed them to the model,
-instead of asking the model to web-search niche index returns (which it can't).
+The portfolio is almost all passive index/QDII funds. Rather than guessing each
+fund's tracked-index code (error-prone) or asking the model to web-search niche
+index returns (it can't), we pull the fund's REAL net-asset-value series and feed
+the latest daily change plus 1-week / 1-month returns to the model. This is exact,
+keyed by the fund code we already have, and the fund.eastmoney endpoint works on
+the ECS host (where the quote/push2 endpoints are blocked).
 
-Network egress works on the ECS host; failures degrade gracefully (the model
-then falls back to its own web search for missing indices).
+Failures degrade gracefully: a fund we can't fetch is simply omitted, and the
+model is told it may web-search the rest.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# fund code -> tracked-index spec.
-#   scope "cn":     match A-share index spot table by keywords (all must appear in 名称)
-#   scope "global": match East Money global/HK spot by display name
-_FUND_INDEX: dict[str, dict[str, Any]] = {
-    "020899": {"index": "中证全指通信设备指数", "scope": "cn", "keywords": ["通信设备"]},
-    "000071": {"index": "恒生指数", "scope": "global", "global_name": "恒生指数"},
-    "025490": {"index": "中证卫星产业指数", "scope": "cn", "keywords": ["卫星"]},
-    "110026": {"index": "创业板指", "scope": "cn", "keywords": ["创业板指"]},
-    "010736": {"index": "沪深300", "scope": "cn", "keywords": ["沪深300"]},
-    "019670": {"index": "港股通创新药指数", "scope": "cn", "keywords": ["创新药"]},
-    "017641": {"index": "标普500", "scope": "global", "global_name": "标普500"},
-    "025832": {"index": "中证电网设备主题指数", "scope": "cn", "keywords": ["电网设备"]},
-    "020972": {"index": "中证机器人指数", "scope": "cn", "keywords": ["机器人"]},
-    "013810": {"index": "上证科创板50成份指数", "scope": "cn", "keywords": ["科创50"]},
-    "007722": {"index": "标普500", "scope": "global", "global_name": "标普500"},
-    "018043": {"index": "纳斯达克100", "scope": "global", "global_name": "纳斯达克"},
-    "019172": {"index": "纳斯达克100", "scope": "global", "global_name": "纳斯达克"},
-    "023828": {"index": "中证半导体材料设备主题指数", "scope": "cn", "keywords": ["半导体材料"]},
-    "016532": {"index": "纳斯达克100", "scope": "global", "global_name": "纳斯达克"},
-}
-
-_CN_SPOT_CATEGORIES = ("沪深重要指数", "上证系列指数", "中证系列指数")
+# QDII funds settle NAV with a longer lag; used only to annotate the brief.
+_QDII_HINT = ("QDII", "纳斯达克", "标普", "恒生", "港股", "海外", "美国")
 
 
 def _to_float(value: Any) -> Optional[float]:
@@ -48,109 +32,79 @@ def _to_float(value: Any) -> Optional[float]:
         return None
 
 
-def _load_cn_spot() -> list[dict[str, Any]]:
-    """All A-share index spot rows from the categories we need."""
+def _cumulative_return(navs: list[float], lookback: int) -> Optional[float]:
+    """Percentage change of the last NAV vs the one `lookback` rows earlier."""
+    if len(navs) <= lookback:
+        return None
+    base = navs[-1 - lookback]
+    last = navs[-1]
+    if not base:
+        return None
+    return round((last / base - 1.0) * 100.0, 2)
+
+
+def fetch_fund_navs(
+    codes: list[str],
+    *,
+    request_delay_sec: float = 0.4,
+) -> dict[str, dict[str, Any]]:
+    """Return fund_code -> {nav_date, nav, day_pct, ret_1w, ret_1m}."""
     import akshare as ak
 
-    rows: dict[str, dict[str, Any]] = {}
-    for cat in _CN_SPOT_CATEGORIES:
+    out: dict[str, dict[str, Any]] = {}
+    for code in codes:
         try:
-            df = ak.stock_zh_index_spot_em(symbol=cat)
+            df = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
         except Exception as exc:  # noqa: BLE001
-            logger.warning("stock_zh_index_spot_em(%s) failed: %s", cat, exc)
+            logger.warning("fund_open_fund_info_em(%s) failed: %s", code, exc)
             continue
-        for rec in df.to_dict("records"):
-            name = str(rec.get("名称", "")).strip()
-            code = str(rec.get("代码", "")).strip()
-            if not name:
-                continue
-            rows.setdefault(
-                code or name,
-                {
-                    "name": name,
-                    "code": code,
-                    "price": _to_float(rec.get("最新价")),
-                    "pct": _to_float(rec.get("涨跌幅")),
-                },
-            )
-    return list(rows.values())
-
-
-def _match_cn(spot: list[dict[str, Any]], keywords: list[str]) -> Optional[dict[str, Any]]:
-    cands = [r for r in spot if all(k in r["name"] for k in keywords)]
-    if not cands:
-        return None
-    cands.sort(key=lambda r: len(r["name"]))
-    return cands[0]
-
-
-def _load_global() -> dict[str, dict[str, Any]]:
-    from fund_platform.market_index import fetch_global_indices_em
-
-    out: dict[str, dict[str, Any]] = {}
-    try:
-        for r in fetch_global_indices_em():
-            name = str(r.get("name", "")).strip()
-            if name:
-                out[name] = {
-                    "name": name,
-                    "code": r.get("code"),
-                    "price": r.get("last_price"),
-                    "pct": r.get("change_pct"),
-                }
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("fetch_global_indices_em failed: %s", exc)
-    return out
-
-
-def fetch_index_quotes(codes: list[str]) -> dict[str, dict[str, Any]]:
-    """Return fund_code -> {index, price, pct, matched_name} for known funds."""
-    wanted = [c for c in codes if c in _FUND_INDEX]
-    if not wanted:
-        return {}
-
-    need_cn = any(_FUND_INDEX[c]["scope"] == "cn" for c in wanted)
-    need_global = any(_FUND_INDEX[c]["scope"] == "global" for c in wanted)
-    cn_spot = _load_cn_spot() if need_cn else []
-    global_spot = _load_global() if need_global else {}
-
-    out: dict[str, dict[str, Any]] = {}
-    for code in wanted:
-        spec = _FUND_INDEX[code]
-        if spec["scope"] == "cn":
-            hit = _match_cn(cn_spot, spec["keywords"])
-        else:
-            hit = global_spot.get(spec["global_name"])
-        if not hit:
+        if df is None or df.empty:
             continue
+        recs = df.to_dict("records")
+        navs = [v for v in (_to_float(r.get("单位净值")) for r in recs) if v is not None]
+        last = recs[-1]
         out[code] = {
-            "index": spec["index"],
-            "matched_name": hit.get("name"),
-            "index_code": hit.get("code"),
-            "price": hit.get("price"),
-            "pct": hit.get("pct"),
+            "nav_date": str(last.get("净值日期") or "")[:10],
+            "nav": _to_float(last.get("单位净值")),
+            "day_pct": _to_float(last.get("日增长率")),
+            "ret_1w": _cumulative_return(navs, 5),
+            "ret_1m": _cumulative_return(navs, 20),
         }
+        if request_delay_sec > 0:
+            time.sleep(request_delay_sec)
     return out
 
 
-def format_index_quotes_block(
+def _is_qdii(name: str) -> bool:
+    return any(tok in name for tok in _QDII_HINT)
+
+
+def format_fund_nav_block(
     holdings: list[dict[str, Any]],
-    quotes: dict[str, dict[str, Any]],
+    navs: dict[str, dict[str, Any]],
 ) -> str:
-    """Human-readable block: one line per fund with its tracked index quote."""
-    if not quotes:
+    """One line per fund with its latest NAV move and 1w/1m returns."""
+    if not navs:
         return ""
     lines: list[str] = []
     for h in holdings:
         code = h["code"]
-        q = quotes.get(code)
+        q = navs.get(code)
         if not q:
             continue
         name = h.get("name") or code
-        pct = q.get("pct")
-        price = q.get("price")
-        pct_s = f"{pct:+.2f}%" if isinstance(pct, (int, float)) else "—"
-        price_s = f"{price}" if price not in (None, "") else "—"
-        idx = q.get("matched_name") or q.get("index") or ""
-        lines.append(f"- {name}（{code}）→ {idx}：最新 {price_s}，涨跌 {pct_s}")
+
+        def _pct(key: str) -> str:
+            v = q.get(key)
+            return f"{v:+.2f}%" if isinstance(v, (int, float)) else "—"
+
+        date = q.get("nav_date") or "—"
+        parts = [f"- {name}（{code}）"]
+        parts.append(f"截至{date}")
+        parts.append(f"当日{_pct('day_pct')}")
+        parts.append(f"近1周{_pct('ret_1w')}")
+        parts.append(f"近1月{_pct('ret_1m')}")
+        if _is_qdii(name):
+            parts.append("(QDII，净值有汇率与约1日时滞)")
+        lines.append("；".join(parts))
     return "\n".join(lines)
