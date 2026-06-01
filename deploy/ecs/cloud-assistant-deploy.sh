@@ -57,9 +57,12 @@ runuser -l wanghan -c '
   export XDG_RUNTIME_DIR=/run/user/\$(id -u)
   mkdir -p ~/.config/systemd/user
   cp deploy/ecs/systemd/*.service ~/.config/systemd/user/
+  cp deploy/ecs/systemd/*.timer ~/.config/systemd/user/ 2>/dev/null || true
   systemctl --user daemon-reload
   systemctl --user enable quant-trading-fund-web.service quant-trading-fund-crawler.service
+  systemctl --user enable quant-trading-fund-advisor.timer
   systemctl --user restart quant-trading-fund-web.service quant-trading-fund-crawler.service
+  systemctl --user restart quant-trading-fund-advisor.timer
   sleep 4
   curl -sf http://127.0.0.1:8010/health && echo
 '
