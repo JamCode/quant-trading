@@ -136,21 +136,43 @@ def _schedule_summary(task_key: str) -> str:
     return ""
 
 
+# Web task list order (grouped: fund → equities → sector → indices).
+_TASK_SORT_ORDER: dict[str, int] = {
+    "fund_mysql_daily_sync": 10,
+    "fund_holdings_sync": 11,
+    "stock_ths_industry_sync": 12,
+    "fund_industry_exposure_sync": 13,
+    "fund_metrics_sync": 14,
+    "fund_stock_popularity_daily": 15,
+    "stock_daily_sync": 20,
+    "hk_stock_daily_sync": 21,
+    "us_stock_daily_sync": 22,
+    "sector_fund_flow_daily": 30,
+    "market_index_intraday_cn": 40,
+    "market_index_daily_cn": 41,
+    "market_index_daily_hk": 42,
+    "market_index_daily_global": 43,
+    "index_valuation_daily_sync": 44,
+    "industry_pe_cninfo_daily_sync": 45,
+}
+
+
 def upsert_task_catalog(*, registered: set[str]) -> None:
-    """Refresh schedule text and enabled flags for all known tasks."""
+    """Refresh schedule text, sort order, and enabled flags for all known tasks."""
     engine = get_engine()
     raw = engine.raw_connection()
     cur = raw.cursor()
     try:
         for task_key in _all_task_keys():
             enabled = 1 if task_key in registered else 0
+            sort_order = _TASK_SORT_ORDER.get(task_key, 99)
             cur.execute(
                 """
                 UPDATE crawler_tasks
-                SET schedule_summary = %s, enabled = %s
+                SET schedule_summary = %s, enabled = %s, sort_order = %s
                 WHERE task_key = %s
                 """,
-                (_schedule_summary(task_key), enabled, task_key),
+                (_schedule_summary(task_key), enabled, sort_order, task_key),
             )
         placeholders = ",".join(["%s"] * len(_REMOVED_TASK_KEYS))
         cur.execute(
