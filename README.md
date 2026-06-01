@@ -91,7 +91,7 @@ python -c "from fund_platform.fund_metrics_sync import sync_fund_metrics; print(
 # 或链式：python -c "from fund_platform.fund_holdings_sync import run_fund_industry_pipeline; print(run_fund_industry_pipeline())"
 ```
 
-爬虫默认定时：名录 `02:00`、全 A `stock_daily` `17:00`（链式东财个股行业补全 → `stock_daily.industry`）、行业资金流 `18:30`（链式成分 + `stock_ths_industry` + 市值）、基金持仓管道 **周日 `03:00`**（见 `deploy/ecs/fund-stack.env.example`）。DDL 含 `023_stock_daily_industry.sql`。
+爬虫默认定时：名录 `02:00`、全 A `stock_daily` `17:00`（链式东财个股行业补全 → `stock_daily.industry`）、行业资金流 `18:30`（链式成分 + `stock_ths_industry` + 市值）、基金持仓 **`fund_holdings_sync` 周日 `03:00`**、行业映射 **`stock_ths_industry_sync` 每天 `18:35`**、行业暴露 **`fund_industry_exposure_sync` 每天 `19:10`**、收益指标 **`fund_metrics_sync` 每天 `05:00`**（见 `deploy/ecs/fund-stack.env.example`）。DDL 含 `023_stock_daily_industry.sql`、`027_split_fund_holdings_tasks.sql`。
 
 **说明**：全市场名录 + 净值快照由 **爬虫** 负责；详情里用户点进某基金时才会请求 AkShare 并写入 `fund_details`（可与未来「详情预取爬虫」再拆）。
 

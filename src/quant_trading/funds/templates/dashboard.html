@@ -222,7 +222,7 @@
       {% endif %}
 
       {% if not has_exposure %}
-      <p class="meta">尚无基金–行业暴露数据（需先同步同花顺行业成分股，再汇总持仓）。持仓表已有数据时会自动重算；也可在服务器手动执行 <code>run_fund_industry_pipeline</code>。上方可点选行业，数据就绪后会显示相关基金。</p>
+      <p class="meta">尚无基金–行业暴露数据（需先同步同花顺行业成分股，再汇总持仓）。持仓表已有数据时会自动重算；也可在服务器分别执行 <code>fund_holdings_sync</code>、<code>stock_ths_industry_sync</code>、<code>fund_industry_exposure_sync</code>、<code>fund_metrics_sync</code>（或一键 <code>run_fund_industry_pipeline</code>）。上方可点选行业，数据就绪后会显示相关基金。</p>
       {% elif related_funds %}
       <p class="meta">暴露基于季报持仓，报告期 <strong>{{ exposure_report_date }}</strong>（非实时仓位，可能与当日资金流存在滞后）。</p>
       <table>

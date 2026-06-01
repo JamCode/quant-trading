@@ -33,6 +33,30 @@ def normalize_stock_name(value: Any) -> str:
     return str(value or "").strip()
 
 
+def dedupe_holdings_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per stock_code; keep the row with the highest weight_pct when duplicated."""
+    by_code: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        code = str(row.get("stock_code") or "").strip()
+        if not code:
+            continue
+        prev = by_code.get(code)
+        if prev is None:
+            by_code[code] = row
+            continue
+        w_new = row.get("weight_pct")
+        w_old = prev.get("weight_pct")
+        if w_new is None and w_old is None:
+            by_code[code] = row
+        elif w_old is None:
+            by_code[code] = row
+        elif w_new is None:
+            pass
+        elif float(w_new) >= float(w_old):
+            by_code[code] = row
+    return list(by_code.values())
+
+
 def row_from_em_record(rec: dict[str, Any]) -> Optional[dict[str, Any]]:
     code = normalize_stock_code(rec.get("股票代码", rec.get("代码", "")))
     name = normalize_stock_name(rec.get("股票名称", rec.get("名称", "")))

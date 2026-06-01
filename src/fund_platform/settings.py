@@ -274,6 +274,30 @@ def fund_holdings_cron_day_of_week() -> str:
     return os.environ.get("FUND_HOLDINGS_CRON_DOW", "sun")
 
 
+def stock_ths_industry_cron_hour() -> int:
+    return int(os.environ.get("STOCK_THS_INDUSTRY_CRON_HOUR", "18"))
+
+
+def stock_ths_industry_cron_minute() -> int:
+    return int(os.environ.get("STOCK_THS_INDUSTRY_CRON_MINUTE", "35"))
+
+
+def fund_industry_exposure_cron_hour() -> int:
+    return int(os.environ.get("FUND_INDUSTRY_EXPOSURE_CRON_HOUR", "19"))
+
+
+def fund_industry_exposure_cron_minute() -> int:
+    return int(os.environ.get("FUND_INDUSTRY_EXPOSURE_CRON_MINUTE", "10"))
+
+
+def fund_metrics_sync_cron_hour() -> int:
+    return int(os.environ.get("FUND_METRICS_SYNC_CRON_HOUR", "5"))
+
+
+def fund_metrics_sync_cron_minute() -> int:
+    return int(os.environ.get("FUND_METRICS_SYNC_CRON_MINUTE", "0"))
+
+
 def fund_stock_popularity_cron_hour() -> int:
     return int(os.environ.get("FUND_STOCK_POPULARITY_CRON_HOUR", "4"))
 

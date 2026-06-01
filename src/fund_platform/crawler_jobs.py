@@ -35,6 +35,7 @@ _REMOVED_TASK_KEYS: tuple[str, ...] = (
     "sector_fund_flow_startup",
     "market_index_intraday",
     "fund_holdings_startup",
+    "fund_holdings_pipeline",
     "market_index_startup",
 )
 
@@ -78,11 +79,26 @@ def _schedule_summary(task_key: str) -> str:
             f"每天 {fp_settings.sector_flow_cron_hour():02d}:"
             f"{fp_settings.sector_flow_cron_minute():02d}（同花顺）"
         )
-    if task_key == "fund_holdings_pipeline":
+    if task_key == "fund_holdings_sync":
         dow = fp_settings.fund_holdings_cron_day_of_week()
         return (
             f"每周 {dow} {fp_settings.fund_holdings_cron_hour():02d}:"
             f"{fp_settings.fund_holdings_cron_minute():02d}"
+        )
+    if task_key == "stock_ths_industry_sync":
+        return (
+            f"每天 {fp_settings.stock_ths_industry_cron_hour():02d}:"
+            f"{fp_settings.stock_ths_industry_cron_minute():02d}"
+        )
+    if task_key == "fund_industry_exposure_sync":
+        return (
+            f"每天 {fp_settings.fund_industry_exposure_cron_hour():02d}:"
+            f"{fp_settings.fund_industry_exposure_cron_minute():02d}"
+        )
+    if task_key == "fund_metrics_sync":
+        return (
+            f"每天 {fp_settings.fund_metrics_sync_cron_hour():02d}:"
+            f"{fp_settings.fund_metrics_sync_cron_minute():02d}"
         )
     if task_key == "market_index_intraday_cn":
         mins = fp_settings.market_index_intraday_cn_interval_minutes()
@@ -163,7 +179,10 @@ def _all_task_keys() -> tuple[str, ...]:
         "hk_stock_daily_sync",
         "us_stock_daily_sync",
         "sector_fund_flow_daily",
-        "fund_holdings_pipeline",
+        "fund_holdings_sync",
+        "stock_ths_industry_sync",
+        "fund_industry_exposure_sync",
+        "fund_metrics_sync",
         "market_index_intraday_cn",
         "market_index_daily_cn",
         "market_index_daily_hk",

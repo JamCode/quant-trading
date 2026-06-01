@@ -14,7 +14,10 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fund_platform import settings as fp_settings
 from fund_platform.crawler_jobs import close_stale_runs, run_scheduled_job, upsert_task_catalog
 from fund_platform.crawler_logging import setup_crawler_logging
-from fund_platform.fund_holdings_sync import run_fund_industry_pipeline
+from fund_platform.fund_exposure import rebuild_fund_industry_exposure
+from fund_platform.fund_holdings_sync import sync_fund_holdings
+from fund_platform.fund_metrics_sync import sync_fund_metrics
+from fund_platform.stock_ths_industry import rebuild_stock_ths_industry
 from fund_platform.index_valuation import sync_index_valuation_daily
 from fund_platform.industry_pe import sync_industry_pe_cninfo_daily
 from fund_platform.market_index import (
@@ -89,8 +92,20 @@ def _run_sector_fund_flow_job() -> dict[str, Any]:
     }
 
 
-def _run_fund_holdings_job() -> dict[str, Any]:
-    return run_fund_industry_pipeline()
+def _run_fund_holdings_sync_job() -> dict[str, Any]:
+    return sync_fund_holdings()
+
+
+def _run_stock_ths_industry_sync_job() -> dict[str, Any]:
+    return rebuild_stock_ths_industry()
+
+
+def _run_fund_industry_exposure_sync_job() -> dict[str, Any]:
+    return rebuild_fund_industry_exposure()
+
+
+def _run_fund_metrics_sync_job() -> dict[str, Any]:
+    return sync_fund_metrics()
 
 
 def _run_fund_stock_popularity_job() -> dict[str, Any]:
@@ -199,18 +214,57 @@ def main() -> None:
     registered.add("sector_fund_flow_daily")
 
     scheduler.add_job(
-        _scheduled("fund_holdings_pipeline", _run_fund_holdings_job),
+        _scheduled("fund_holdings_sync", _run_fund_holdings_sync_job),
         CronTrigger(
             day_of_week=fp_settings.fund_holdings_cron_day_of_week(),
             hour=fp_settings.fund_holdings_cron_hour(),
             minute=fp_settings.fund_holdings_cron_minute(),
         ),
-        id="fund_holdings_pipeline",
+        id="fund_holdings_sync",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
     )
-    registered.add("fund_holdings_pipeline")
+    registered.add("fund_holdings_sync")
+
+    scheduler.add_job(
+        _scheduled("stock_ths_industry_sync", _run_stock_ths_industry_sync_job),
+        CronTrigger(
+            hour=fp_settings.stock_ths_industry_cron_hour(),
+            minute=fp_settings.stock_ths_industry_cron_minute(),
+        ),
+        id="stock_ths_industry_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    registered.add("stock_ths_industry_sync")
+
+    scheduler.add_job(
+        _scheduled("fund_industry_exposure_sync", _run_fund_industry_exposure_sync_job),
+        CronTrigger(
+            hour=fp_settings.fund_industry_exposure_cron_hour(),
+            minute=fp_settings.fund_industry_exposure_cron_minute(),
+        ),
+        id="fund_industry_exposure_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    registered.add("fund_industry_exposure_sync")
+
+    scheduler.add_job(
+        _scheduled("fund_metrics_sync", _run_fund_metrics_sync_job),
+        CronTrigger(
+            hour=fp_settings.fund_metrics_sync_cron_hour(),
+            minute=fp_settings.fund_metrics_sync_cron_minute(),
+        ),
+        id="fund_metrics_sync",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    registered.add("fund_metrics_sync")
 
     scheduler.add_job(
         _scheduled("fund_stock_popularity_daily", _run_fund_stock_popularity_job),
@@ -315,7 +369,8 @@ def main() -> None:
 
     logger.info(
         "Fund crawler running log=%s stale_closed=%s; fund %02d:%02d stock %02d:%02d "
-        "sector %02d:%02d holdings %s %02d:%02d index intraday %sm index close %02d:%02d",
+        "sector %02d:%02d holdings %s %02d:%02d ths %02d:%02d exposure %02d:%02d "
+        "metrics %02d:%02d index intraday %sm index close %02d:%02d",
         log_file,
         closed,
         fp_settings.crawler_cron_hour(),
@@ -327,6 +382,12 @@ def main() -> None:
         fp_settings.fund_holdings_cron_day_of_week(),
         fp_settings.fund_holdings_cron_hour(),
         fp_settings.fund_holdings_cron_minute(),
+        fp_settings.stock_ths_industry_cron_hour(),
+        fp_settings.stock_ths_industry_cron_minute(),
+        fp_settings.fund_industry_exposure_cron_hour(),
+        fp_settings.fund_industry_exposure_cron_minute(),
+        fp_settings.fund_metrics_sync_cron_hour(),
+        fp_settings.fund_metrics_sync_cron_minute(),
         intraday_mins,
         fp_settings.market_index_daily_cron_hour(),
         fp_settings.market_index_daily_cron_minute(),

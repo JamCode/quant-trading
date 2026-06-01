@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from fund_platform import settings as fp_settings
 from fund_platform.db import get_engine
-from fund_platform.fund_holdings_common import row_from_em_record
+from fund_platform.fund_holdings_common import dedupe_holdings_rows, row_from_em_record
 from fund_platform.holdings import _latest_quarter_label
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,7 @@ def fetch_fund_stock_holdings_em(fund_code: str) -> Optional[dict[str, Any]]:
 
 def _persist_fund_holdings(cur, fund_code: str, bundle: dict[str, Any], now: str) -> int:
     report_date = bundle["report_date"]
+    stocks = dedupe_holdings_rows(list(bundle["stocks"]))
     cur.execute(
         "DELETE FROM fund_holdings WHERE fund_code = %s AND report_date = %s",
         (fund_code, report_date),
@@ -97,7 +98,7 @@ def _persist_fund_holdings(cur, fund_code: str, bundle: dict[str, Any], now: str
             r.get("weight_pct"),
             now,
         )
-        for r in bundle["stocks"]
+        for r in stocks
     ]
     if params:
         cur.executemany(
@@ -210,7 +211,7 @@ def sync_fund_holdings(
 
 
 def run_fund_industry_pipeline() -> dict[str, Any]:
-    """Holdings sync then exposure + metrics rebuild."""
+    """Run all four holdings-related steps in sequence (manual / one-shot only)."""
     from fund_platform.fund_exposure import rebuild_fund_industry_exposure
     from fund_platform.fund_metrics_sync import sync_fund_metrics
     from fund_platform.stock_ths_industry import rebuild_stock_ths_industry

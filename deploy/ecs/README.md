@@ -142,7 +142,7 @@ curl -sS http://127.0.0.1:8010/health
 | 主文件 | `crawler.log`（`RotatingFileHandler`，约 5×10MB 轮转） |
 | 同时输出 | stderr → `journalctl --user -u quant-trading-fund-crawler.service` |
 
-每条定时任务在日志中有 `job start id=…` / `job end id=…`；业务失败见 `… failed:`；未捕获异常带完整 traceback。任务 id 与 APScheduler 一致，例如 `fund_mysql_daily_sync`、`stock_daily_sync`、`sector_fund_flow_daily`、`fund_holdings_pipeline`、`market_index_intraday`、`market_index_daily_cn` 等（仅 cron/interval，无启动一次性任务）。
+每条定时任务在日志中有 `job start id=…` / `job end id=…`；业务失败见 `… failed:`；未捕获异常带完整 traceback。任务 id 与 APScheduler 一致，例如 `fund_mysql_daily_sync`、`stock_daily_sync`、`sector_fund_flow_daily`、`fund_holdings_sync`、`stock_ths_industry_sync`、`fund_industry_exposure_sync`、`fund_metrics_sync`、`market_index_intraday_cn`、`market_index_daily_cn` 等（仅 cron/interval，无启动一次性任务）。
 
 ```bash
 # 最近 200 行文件日志
@@ -160,7 +160,11 @@ journalctl --user -u quant-trading-fund-crawler.service -n 100 --no-pager
 ```bash
 cd /home/wanghan/quant-trading && source ~/miniconda3/etc/profile.d/conda.sh && conda activate quant
 set -a && source deploy/ecs/fund-stack.env && set +a
-python -c "from fund_platform.fund_holdings_sync import run_fund_industry_pipeline; print(run_fund_industry_pipeline())"
+python -c "from fund_platform.fund_holdings_sync import sync_fund_holdings; print(sync_fund_holdings())"
+python -c "from fund_platform.stock_ths_industry import rebuild_stock_ths_industry; print(rebuild_stock_ths_industry())"
+python -c "from fund_platform.fund_exposure import rebuild_fund_industry_exposure; print(rebuild_fund_industry_exposure())"
+python -c "from fund_platform.fund_metrics_sync import sync_fund_metrics; print(sync_fund_metrics())"
+# 或一键链式：run_fund_industry_pipeline()
 ```
 
 验证：`SELECT industry, COUNT(*) FROM fund_industry_exposure WHERE weight_pct>=10 GROUP BY industry LIMIT 5;`  
