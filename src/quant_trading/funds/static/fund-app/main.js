@@ -24,9 +24,9 @@ const NAV = [
   { path: "/valuation", label: "宽基 PE", title: "宽基 PE" },
   { path: "/funds", label: "基金目录", title: "基金目录" },
   { path: "/holdings", label: "持仓反查", title: "持仓反查" },
+  { path: "/crawler", label: "爬虫任务", title: "爬虫任务" },
   { path: "/stocks", label: "A 股行情", title: "A 股行情" },
   { path: "/advisor", label: "基金 AI 助手", title: "基金 AI 助手" },
-  { path: "/crawler", label: "爬虫任务", title: "爬虫任务", muted: true },
 ];
 
 function renderSidebar(activePath) {

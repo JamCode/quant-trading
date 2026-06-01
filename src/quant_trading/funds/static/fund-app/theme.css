@@ -89,7 +89,6 @@ a {
 
 .sidebar a.nav-muted {
   color: var(--muted);
-  margin-top: auto;
 }
 
 .app-body {
