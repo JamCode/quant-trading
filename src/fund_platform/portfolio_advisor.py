@@ -116,6 +116,7 @@ def format_holdings_block(holdings: list[dict[str, Any]]) -> str:
 def build_analysis_prompt(
     holdings: list[dict[str, Any]],
     *,
+    index_quotes_block: str = "",
     as_of: Optional[date] = None,
 ) -> str:
     today = as_of or date.today()
@@ -124,13 +125,20 @@ def build_analysis_prompt(
     horizon = _holding_horizon()
     theme_hints = _theme_hints_from_holdings(holdings)
     codes_line = "、".join(h["code"] for h in holdings)
+    quotes_section = ""
+    if index_quotes_block.strip():
+        quotes_section = f"""
+
+=== 实时跟踪指数行情（脚本当日抓取，权威，请直接采用，勿再为这些指数编造数字）===
+{index_quotes_block.strip()}
+（上表是各基金跟踪指数的当日最新点位与涨跌幅；基金当日涨跌≈对应指数，QDII 有汇率与约1日时滞。表中没有的指数再联网补充。）"""
     return f"""分析基准日：{today.isoformat()}（以该日或最近一个已收盘交易日为准）
 投资者偏好：{style}，持有周期 {horizon}
 
 === 我的持仓（仅清单，无行情）共 {len(holdings)} 只 ===
 {block}
 代码一览：{codes_line}
-涉及主题方向（供分组参考）：{theme_hints}
+涉及主题方向（供分组参考）：{theme_hints}{quotes_section}
 
 === 任务（须先联网搜索，再撰写）===
 
@@ -149,7 +157,7 @@ def build_analysis_prompt(
    · QDII·港股（恒生、港股创新药等）
 每一只或每一组（须列出全部 6 位代码）按下面五行写：
    · 跟踪指数：写出该基金跟踪的指数名称（尽量含指数代码）；不确定就写最可能的并标注"待核实"。
-   · 指数近期表现：A 类主流指数→给当日真实涨跌幅+日期（条件允许加近 1 周）；B 类细分主题指数→若未检索到精确数字，明确写「未检索到当日精确涨跌」并用当日所属板块/主题表现判断方向（涨/跌/持平）。严禁写「约X%」「需查询」等占位符。
+   · 指数近期表现：【优先采用上文"实时跟踪指数行情"表里的当日点位与涨跌幅】；表中没有的指数再联网查（主流指数给真实数字，细分指数查不到就按所属板块定性，严禁写「约X%」「需查询」等占位符）。
    · 涨跌原因：结合当日/近几日【具体事件或数据】解释为何涨/跌，区分「跟随大盘β」还是「主题独立行情」；不要用与时点无关的产业套话（如"5G加速""国产替代""人口老龄化"这类常年成立的话）。
    · 主要风险：1～2 条，须与近期事件/估值/资金/汇率等当前因素相关，并尽量给可观察的触发信号。
    · 主要机会：1～2 条，须与近期催化或数据相关。

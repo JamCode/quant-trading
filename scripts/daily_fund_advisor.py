@@ -44,7 +44,19 @@ def main() -> None:
     if not holdings:
         raise SystemExit(f"No holdings in {config_path}")
 
-    prompt = portfolio_advisor.build_analysis_prompt(holdings)
+    index_block = ""
+    if os.environ.get("FUND_ADVISOR_FETCH_INDEX", "1").strip().lower() not in ("0", "false", "no"):
+        try:
+            from fund_platform import index_quotes
+
+            codes = [h["code"] for h in holdings]
+            quotes = index_quotes.fetch_index_quotes(codes)
+            index_block = index_quotes.format_index_quotes_block(holdings, quotes)
+            print(f"Fetched {len(quotes)} tracked-index quotes via akshare", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Index quote fetch skipped: {exc}", file=sys.stderr)
+
+    prompt = portfolio_advisor.build_analysis_prompt(holdings, index_quotes_block=index_block)
     if args.dry_run:
         print("=== PROMPT ===")
         print(prompt)
