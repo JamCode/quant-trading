@@ -8,6 +8,7 @@ from typing import Any, Optional
 import pymysql.cursors
 
 from fund_platform.stock_price_history import normalize_stock_code
+from fund_platform.time_util import format_db_time_cn
 from fund_platform.units import amount_to_yi
 
 _STOCK_YI_KEYS = frozenset({"float_market_cap", "total_market_cap", "amount"})
@@ -58,8 +59,12 @@ def _cursor(conn):
 def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for k, v in row.items():
-        if isinstance(v, (datetime, date)):
-            out[k] = v.isoformat() if isinstance(v, date) else v.strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(v, datetime):
+            out[k] = format_db_time_cn(v)
+        elif isinstance(v, date):
+            out[k] = v.isoformat()
+        elif k in ("updated_at", "finished_at", "started_at") and isinstance(v, str):
+            out[k] = format_db_time_cn(v)
         elif k in _STOCK_YI_KEYS:
             out[k] = amount_to_yi(v)
         else:

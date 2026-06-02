@@ -15,7 +15,7 @@ const SORTABLE_COLUMNS = [
   { id: "pb", label: "PB", className: "num" },
   { id: "change_60d_pct", label: "60日", className: "num" },
   { id: "change_ytd_pct", label: "年初至今", className: "num" },
-  { id: "updated_at", label: "更新时间", className: "data-time", sortable: false },
+  { id: "updated_at", label: "更新时间(北京)", className: "data-time", sortable: false },
 ];
 
 /** Snapshot trade date vs row write time (DB updated_at). */
@@ -188,7 +188,7 @@ export async function mountStocks(query) {
     }
 
     const syncHint = syncAt
-      ? ` · 行情入库 <strong>${escapeHtml(syncAt)}</strong>`
+      ? ` · 行情入库(北京) <strong>${escapeHtml(syncAt)}</strong>`
       : "";
     const filterParts = buildFilterSummary(query, meta);
     const cov = meta.industry_coverage || {};

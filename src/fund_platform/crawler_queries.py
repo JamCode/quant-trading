@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any, Optional
-from zoneinfo import ZoneInfo
 
 import pymysql.cursors
 
-_CN_TZ = ZoneInfo("Asia/Shanghai")
-_UTC = timezone.utc
+from fund_platform.time_util import format_db_time_cn
 
 _STATUS_LABELS = {
     "running": "运行中",
@@ -34,11 +32,7 @@ def _jsonable(val: Any) -> Any:
 
 def _format_cn_time(dt: datetime) -> str:
     """DB stores UTC naive timestamps; display as Asia/Shanghai."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=_UTC)
-    else:
-        dt = dt.astimezone(_UTC)
-    return dt.astimezone(_CN_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    return str(format_db_time_cn(dt))
 
 
 def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
