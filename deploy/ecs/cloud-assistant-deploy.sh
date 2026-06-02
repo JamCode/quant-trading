@@ -63,6 +63,10 @@ runuser -l wanghan -c '
   systemctl --user enable quant-trading-fund-advisor.timer
   systemctl --user restart quant-trading-fund-web.service quant-trading-fund-crawler.service
   systemctl --user restart quant-trading-fund-advisor.timer
+  if grep -q "^TELEGRAM_BOT_TOKEN=." deploy/ecs/fund-stack.env 2>/dev/null; then
+    systemctl --user enable quant-trading-telegram-bot.service
+    systemctl --user restart quant-trading-telegram-bot.service
+  fi
   sleep 4
   curl -sf http://127.0.0.1:8010/health && echo
 '

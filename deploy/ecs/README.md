@@ -172,6 +172,37 @@ python -c "from fund_platform.fund_metrics_sync import sync_fund_metrics; print(
 
 **基金 AI 助手**（提示词生成 + 粘贴解析）：`https://你的域名/quant-funds/advisor`（本机调试：`http://127.0.0.1:8010/advisor`）。
 
+## Telegram 工作机器人
+
+用途：通过 Telegram 给 ECS 发轻量运维指令，例如 `/status`、`/health`、`/logs web`、`/deploy`。默认不允许任意 shell 命令；如确需 `/run <cmd>`，显式设置 `TELEGRAM_ALLOW_SHELL=1`。
+
+1. 在 Telegram 找 `@BotFather` 创建 bot，拿到 token。
+2. 临时启动一次 bot 后给它发 `/help`，回复里会显示你的 `chat_id`：
+
+```bash
+cd ~/quant-trading && source ~/miniconda3/etc/profile.d/conda.sh && conda activate quant
+set -a && source deploy/ecs/fund-stack.env && set +a
+TELEGRAM_BOT_TOKEN=你的token python -m fund_platform.telegram_bot
+```
+
+3. 编辑 `deploy/ecs/fund-stack.env`：
+
+```bash
+TELEGRAM_BOT_TOKEN=你的token
+TELEGRAM_ALLOWED_CHAT_IDS=你的chat_id
+TELEGRAM_ALLOW_SHELL=0
+```
+
+4. 启动用户级 systemd 服务：
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp ~/quant-trading/deploy/ecs/systemd/quant-trading-telegram-bot.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now quant-trading-telegram-bot.service
+systemctl --user status quant-trading-telegram-bot.service
+```
+
 **大盘指数日 K 历史初始化**（009 表已建、环境变量与 `MARKET_INDEX_*` 一致后）：
 
 ```bash

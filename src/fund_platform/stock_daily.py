@@ -125,10 +125,14 @@ def _sina_page_count() -> int:
     return 1
 
 
-def _fetch_spot_sina_dataframe() -> list[dict[str, Any]]:
+def _fetch_spot_sina_dataframe(*, page_delay_sec: Optional[float] = None) -> list[dict[str, Any]]:
     """Sina paginated A-share spot; includes 流通/总市值 (万元 → 亿)."""
     page_count = _sina_page_count()
-    page_delay = fp_settings.stock_daily_page_delay_sec()
+    page_delay = (
+        fp_settings.stock_daily_page_delay_sec()
+        if page_delay_sec is None
+        else max(0.0, float(page_delay_sec))
+    )
     rows: list[dict[str, Any]] = []
 
     for page in range(1, page_count + 1):
@@ -327,12 +331,16 @@ def _fetch_spot_em_dataframe() -> "pd.DataFrame":
     return df[present]
 
 
-def fetch_a_share_spot_sina(*, max_attempts: int = 3) -> list[dict[str, Any]]:
+def fetch_a_share_spot_sina(
+    *,
+    max_attempts: int = 3,
+    page_delay_sec: Optional[float] = None,
+) -> list[dict[str, Any]]:
     """Sina paginated spot (ECS-friendly; includes float/total market cap)."""
     last_exc: Optional[Exception] = None
     for attempt in range(max(1, max_attempts)):
         try:
-            return _fetch_spot_sina_dataframe()
+            return _fetch_spot_sina_dataframe(page_delay_sec=page_delay_sec)
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             logger.warning("sina spot attempt %s failed: %s", attempt + 1, exc)
@@ -520,6 +528,105 @@ def _upsert_stock_daily(cur, td_s: str, payload: list[dict[str, Any]], *, now: s
     params = _stock_daily_row_params(td_s, payload, now)
     for i in range(0, len(params), chunk):
         cur.executemany(_STOCK_DAILY_UPSERT_SQL, params[i : i + chunk])
+
+
+_STOCK_INTRADAY_UPSERT_SQL = """
+    INSERT INTO stock_daily (
+      trade_date, code, name, price, change_pct,
+      float_market_cap, total_market_cap, turnover_pct, amount,
+      pe_dynamic, pb, updated_at
+    )
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+      name = VALUES(name),
+      price = VALUES(price),
+      change_pct = VALUES(change_pct),
+      float_market_cap = COALESCE(VALUES(float_market_cap), float_market_cap),
+      total_market_cap = COALESCE(VALUES(total_market_cap), total_market_cap),
+      turnover_pct = COALESCE(VALUES(turnover_pct), turnover_pct),
+      amount = COALESCE(VALUES(amount), amount),
+      pe_dynamic = COALESCE(VALUES(pe_dynamic), pe_dynamic),
+      pb = COALESCE(VALUES(pb), pb),
+      updated_at = VALUES(updated_at)
+"""
+
+
+def _stock_intraday_row_params(td_s: str, payload: list[dict[str, Any]], now: str) -> list[tuple[Any, ...]]:
+    return [
+        (
+            td_s,
+            r["code"],
+            r.get("name") or "",
+            r.get("price"),
+            r.get("change_pct"),
+            r.get("float_market_cap"),
+            r.get("total_market_cap"),
+            r.get("turnover_pct"),
+            r.get("amount"),
+            r.get("pe_dynamic"),
+            r.get("pb"),
+            now,
+        )
+        for r in payload
+    ]
+
+
+def fetch_a_share_spot_intraday(*, max_attempts: int = 2) -> list[dict[str, Any]]:
+    """Fast Sina full-market scan for intraday refresh (shorter page delay)."""
+    return fetch_a_share_spot_sina(
+        max_attempts=max_attempts,
+        page_delay_sec=fp_settings.stock_intraday_page_delay_sec(),
+    )
+
+
+def _upsert_stock_intraday_snapshot(td_s: str, payload: list[dict[str, Any]], *, now: str) -> int:
+    engine = get_engine()
+    raw = engine.raw_connection()
+    cur = raw.cursor()
+    try:
+        chunk = fp_settings.stock_daily_db_chunk_size()
+        params = _stock_intraday_row_params(td_s, payload, now)
+        for i in range(0, len(params), chunk):
+            cur.executemany(_STOCK_INTRADAY_UPSERT_SQL, params[i : i + chunk])
+        raw.commit()
+        return len(params)
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+        raw.close()
+
+
+def sync_stock_intraday_cn(*, force: bool = False) -> dict[str, Any]:
+    """Refresh today's A-share quotes in-place (no intraday history table)."""
+    from fund_platform.market_index import is_cn_equity_trading_session
+    from fund_platform.time_util import format_db_time_cn
+
+    if not force and not is_cn_equity_trading_session():
+        return {"ok": True, "skipped": True, "reason": "outside_trading_session"}
+
+    td_s = _trade_date_today().isoformat()
+    try:
+        rows = fetch_a_share_spot_intraday()
+        if len(rows) < _MIN_ROWS_OK:
+            raise RuntimeError(f"intraday spot rows too few: {len(rows)}")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("stock_intraday_cn fetch failed")
+        return {"ok": False, "trade_date": td_s, "error": str(exc)}
+
+    now = _utc_now_iso()
+    count = _upsert_stock_intraday_snapshot(td_s, rows, now=now)
+    quote_cn = format_db_time_cn(now)
+    logger.info("stock_intraday_cn ok trade_date=%s count=%s quote_time=%s", td_s, count, quote_cn)
+    return {
+        "ok": True,
+        "trade_date": td_s,
+        "count": count,
+        "source": "sina",
+        "quote_time": quote_cn,
+        "intraday": True,
+    }
 
 
 def _prune_stock_daily_codes(cur, td_s: str, keep_codes: set[str]) -> int:

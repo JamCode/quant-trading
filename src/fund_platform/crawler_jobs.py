@@ -100,6 +100,9 @@ def _schedule_summary(task_key: str) -> str:
             f"每天 {fp_settings.fund_metrics_sync_cron_hour():02d}:"
             f"{fp_settings.fund_metrics_sync_cron_minute():02d}"
         )
+    if task_key == "stock_intraday_cn":
+        secs = fp_settings.stock_intraday_cn_interval_seconds()
+        return f"A 股交易日盘中 每 {secs} 秒（覆盖当日 stock_daily，不留历史）"
     if task_key == "market_index_intraday_cn":
         mins = fp_settings.market_index_intraday_cn_interval_minutes()
         return f"A 股/港股交易日盘中 每 {mins} 分钟"
@@ -145,6 +148,7 @@ _TASK_SORT_ORDER: dict[str, int] = {
     "fund_metrics_sync": 14,
     "fund_stock_popularity_daily": 15,
     "stock_daily_sync": 20,
+    "stock_intraday_cn": 23,
     "hk_stock_daily_sync": 21,
     "us_stock_daily_sync": 22,
     "sector_fund_flow_daily": 30,
@@ -198,6 +202,7 @@ def _all_task_keys() -> tuple[str, ...]:
     return (
         "fund_mysql_daily_sync",
         "stock_daily_sync",
+        "stock_intraday_cn",
         "hk_stock_daily_sync",
         "us_stock_daily_sync",
         "sector_fund_flow_daily",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Optional
 
 import pymysql.cursors
@@ -282,6 +282,37 @@ def _industry_filter_sql(
             [ind],
         )
     return " AND 1=0", []
+
+
+def stock_intraday_live(conn, *, trade_date: str) -> bool:
+    """True when today's snapshot was refreshed recently during A-share session."""
+    from fund_platform import settings as fp_settings
+    from fund_platform.market_index import is_cn_equity_trading_session
+
+    if not is_cn_equity_trading_session():
+        return False
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT MAX(updated_at) AS t
+        FROM stock_daily
+        WHERE trade_date = %s
+        """,
+        (trade_date,),
+    )
+    row = cur.fetchone()
+    if not row or not row.get("t"):
+        return False
+    t = row["t"]
+    if not isinstance(t, datetime):
+        return False
+    age_sec = fp_settings.stock_intraday_live_max_age_sec()
+    now_utc = datetime.now(timezone.utc)
+    if t.tzinfo is None:
+        updated = t.replace(tzinfo=timezone.utc)
+    else:
+        updated = t.astimezone(timezone.utc)
+    return (now_utc - updated).total_seconds() <= age_sec
 
 
 def stock_daily_sync_finished_at(conn, *, trade_date: str) -> Optional[str]:

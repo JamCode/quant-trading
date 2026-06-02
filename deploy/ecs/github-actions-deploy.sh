@@ -26,9 +26,14 @@ set -euo pipefail
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 mkdir -p "$HOME/.config/systemd/user"
 cp "$HOME/quant-trading/deploy/ecs/systemd/"*.service "$HOME/.config/systemd/user/"
+cp "$HOME/quant-trading/deploy/ecs/systemd/"*.timer "$HOME/.config/systemd/user/" 2>/dev/null || true
 systemctl --user daemon-reload
 systemctl --user enable quant-trading-fund-web.service quant-trading-fund-crawler.service
 systemctl --user restart quant-trading-fund-web.service quant-trading-fund-crawler.service
+if grep -q '^TELEGRAM_BOT_TOKEN=.' "$HOME/quant-trading/deploy/ecs/fund-stack.env" 2>/dev/null; then
+  systemctl --user enable quant-trading-telegram-bot.service
+  systemctl --user restart quant-trading-telegram-bot.service
+fi
 sleep 4
 curl -sf http://127.0.0.1:8010/health && echo ""
 REMOTE

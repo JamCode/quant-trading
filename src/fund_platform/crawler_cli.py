@@ -21,6 +21,7 @@ from fund_platform.stock_ths_industry import rebuild_stock_ths_industry
 from fund_platform.index_valuation import sync_index_valuation_daily
 from fund_platform.industry_pe import sync_industry_pe_cninfo_daily
 from fund_platform.market_index import (
+    is_cn_equity_trading_session,
     is_index_intraday_poll_window,
     sync_market_index_daily_close,
     sync_market_index_intraday_cn,
@@ -28,7 +29,7 @@ from fund_platform.market_index import (
 from fund_platform.sector_flow import sync_sector_fund_flow_daily
 from fund_platform.sector_market_cap import run_after_sector_flow
 from fund_platform.hk_stock_daily import sync_hk_stock_daily
-from fund_platform.stock_daily import sync_stock_daily
+from fund_platform.stock_daily import sync_stock_daily, sync_stock_intraday_cn
 from fund_platform.us_stock_daily import sync_us_stock_daily
 from fund_platform.fund_stock_popularity import sync_fund_stock_popularity
 from fund_platform.sync import sync_catalog_mysql
@@ -65,6 +66,10 @@ def _run_job() -> dict[str, Any]:
 
 def _run_stock_daily_job() -> dict[str, Any]:
     return sync_stock_daily()
+
+
+def _run_stock_intraday_cn_job() -> dict[str, Any]:
+    return sync_stock_intraday_cn()
 
 
 def _run_hk_stock_daily_job() -> dict[str, Any]:
@@ -171,6 +176,22 @@ def main() -> None:
         coalesce=True,
     )
     registered.add("stock_daily_sync")
+
+    if fp_settings.stock_intraday_cn_enabled():
+        intraday_secs = fp_settings.stock_intraday_cn_interval_seconds()
+        scheduler.add_job(
+            _scheduled_when(
+                "stock_intraday_cn",
+                _run_stock_intraday_cn_job,
+                when=is_cn_equity_trading_session,
+            ),
+            IntervalTrigger(seconds=intraday_secs),
+            id="stock_intraday_cn",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        registered.add("stock_intraday_cn")
 
     scheduler.add_job(
         _scheduled("hk_stock_daily_sync", _run_hk_stock_daily_job),
@@ -370,7 +391,7 @@ def main() -> None:
     logger.info(
         "Fund crawler running log=%s stale_closed=%s; fund %02d:%02d stock %02d:%02d "
         "sector %02d:%02d holdings %s %02d:%02d ths %02d:%02d exposure %02d:%02d "
-        "metrics %02d:%02d index intraday %sm index close %02d:%02d",
+        "metrics %02d:%02d stock intraday %ss index intraday %sm index close %02d:%02d",
         log_file,
         closed,
         fp_settings.crawler_cron_hour(),
@@ -388,6 +409,9 @@ def main() -> None:
         fp_settings.fund_industry_exposure_cron_minute(),
         fp_settings.fund_metrics_sync_cron_hour(),
         fp_settings.fund_metrics_sync_cron_minute(),
+        fp_settings.stock_intraday_cn_interval_seconds()
+        if fp_settings.stock_intraday_cn_enabled()
+        else 0,
         intraday_mins,
         fp_settings.market_index_daily_cron_hour(),
         fp_settings.market_index_daily_cron_minute(),

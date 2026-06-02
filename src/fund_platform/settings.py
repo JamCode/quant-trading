@@ -172,6 +172,29 @@ def stock_daily_cron_minute() -> int:
     return int(os.environ.get("STOCK_DAILY_CRON_MINUTE", "10"))
 
 
+def stock_intraday_cn_enabled() -> bool:
+    return os.environ.get("STOCK_INTRADAY_CN_ENABLED", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
+def stock_intraday_cn_interval_seconds() -> int:
+    """A-share trading session poll interval (overwrites today's stock_daily rows)."""
+    return max(15, int(os.environ.get("STOCK_INTRADAY_CN_INTERVAL_SECONDS", "30")))
+
+
+def stock_intraday_page_delay_sec() -> float:
+    """Sina page gap for intraday scan; lower than STOCK_DAILY_PAGE_DELAY_SEC."""
+    return max(0.0, float(os.environ.get("STOCK_INTRADAY_PAGE_DELAY_SEC", "0.12")))
+
+
+def stock_intraday_live_max_age_sec() -> int:
+    """UI treats stock_daily as live when max(updated_at) is newer than this."""
+    return max(30, int(os.environ.get("STOCK_INTRADAY_LIVE_MAX_AGE_SEC", "90")))
+
+
 def hk_stock_daily_db_chunk_size() -> int:
     return max(100, min(int(os.environ.get("HK_STOCK_DAILY_DB_CHUNK", "500")), 2000))
 

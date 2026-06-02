@@ -54,13 +54,15 @@ echo "==> systemd user units (optional, copy + reload)"
 set -euo pipefail
 mkdir -p "$HOME/.config/systemd/user"
 cp "$HOME/quant-trading/deploy/ecs/systemd/"*.service "$HOME/.config/systemd/user/"
+cp "$HOME/quant-trading/deploy/ecs/systemd/"*.timer "$HOME/.config/systemd/user/" 2>/dev/null || true
 systemctl --user daemon-reload || true
 echo ""
 echo "Next on ECS:"
 echo "  1) mysql ... < ~/quant-trading/schema/mysql/001_init.sql"
 echo "  2) cp ~/quant-trading/deploy/ecs/fund-stack.env.example ~/quant-trading/deploy/ecs/fund-stack.env && edit DATABASE_URL"
 echo "  3) systemctl --user enable --now quant-trading-fund-web.service quant-trading-fund-crawler.service"
-echo "  4) curl -sS http://127.0.0.1:8010/health"
+echo "  4) 填 TELEGRAM_BOT_TOKEN / TELEGRAM_ALLOWED_CHAT_IDS 后：systemctl --user enable --now quant-trading-telegram-bot.service"
+echo "  5) curl -sS http://127.0.0.1:8010/health"
 REMOTE_INNER
 
 echo "==> done"

@@ -197,8 +197,11 @@ export async function mountStocks(query) {
       rows = `<tr><td colspan="12">${hint}</td></tr>`;
     }
 
+    const liveBadge = data.intraday_live
+      ? ' · <span class="live-badge">盘中刷新</span>'
+      : "";
     const syncHint = syncAt
-      ? ` · 行情入库(北京) <strong>${escapeHtml(fmtSyncTime(syncAt))}</strong>`
+      ? ` · 最近入库(北京) <strong>${escapeHtml(fmtSyncTime(syncAt))}</strong>`
       : "";
     const filterParts = buildFilterSummary(query, meta);
     const cov = meta.industry_coverage || {};
@@ -211,7 +214,7 @@ export async function mountStocks(query) {
       ? `当前：${filterParts.join(" · ")}${industryMapHint}`
       : `点击板块标签筛选；表头点击排序${industryMapHint}`;
 
-    host.innerHTML = `<p class="sub meta">数据日 <strong>${escapeHtml(td || "—")}</strong>${syncHint} · 共 ${data.total ?? 0} 只 · 第 ${data.page}/${data.pages} 页</p>
+    host.innerHTML = `<p class="sub meta">数据日 <strong>${escapeHtml(td || "—")}</strong>${liveBadge}${syncHint} · 共 ${data.total ?? 0} 只 · 第 ${data.page}/${data.pages} 页 · 交易时段约每 30 秒刷新现价</p>
       <div class="funds-filters panel stocks-filters">
         <p class="dim">板块</p>
         <div class="chip-group" id="stocks-board-chips">${renderBoardChips(meta.board_options, activeBoard)}</div>

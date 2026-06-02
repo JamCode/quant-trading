@@ -1,0 +1,16 @@
+[Unit]
+Description=quant-trading Telegram work bot
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/quant-trading
+EnvironmentFile=%h/quant-trading/deploy/ecs/fund-stack.env
+EnvironmentFile=-%h/quant-trading/.env
+Environment=PYTHONPATH=%h/quant-trading/src
+ExecStart=%h/miniconda3/envs/quant/bin/python -m fund_platform.telegram_bot
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
