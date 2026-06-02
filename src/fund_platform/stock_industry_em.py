@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import time
+from typing import Any, Optional
 
 import pymysql.cursors
+import requests
 
 from fund_platform import settings as fp_settings
 from fund_platform.sector_constituents import normalize_industry_name
@@ -13,6 +15,22 @@ from fund_platform.sector_constituents import normalize_industry_name
 logger = logging.getLogger(__name__)
 
 _SUFFIXES = ("Ⅲ", "Ⅱ", "III", "II")
+
+_EM_STOCK_GET_HOSTS = (
+    "push2.eastmoney.com",
+    "push2his.eastmoney.com",
+    "82.push2.eastmoney.com",
+    "63.push2.eastmoney.com",
+    "48.push2.eastmoney.com",
+)
+
+_EM_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://quote.eastmoney.com/",
+}
 
 
 def _cursor(conn):
@@ -56,6 +74,57 @@ def normalize_em_industry(raw: str, known: set[str]) -> str:
     return s
 
 
+def _industry_from_em_payload(payload: dict[str, Any]) -> Optional[str]:
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return None
+    raw = data.get("f127")
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s or None
+
+
+def _fetch_industry_direct(symbol: str, *, timeout: float = 15.0) -> Optional[str]:
+    """Read f127 (行业) from East Money stock/get; avoids akshare DataFrame parse bugs."""
+    market_code = 1 if symbol.startswith("6") else 0
+    params = {
+        "fltt": "2",
+        "invt": "2",
+        "fields": "f57,f58,f127",
+        "secid": f"{market_code}.{symbol}",
+    }
+    last_exc: Optional[Exception] = None
+    for host in _EM_STOCK_GET_HOSTS:
+        url = f"https://{host}/api/qt/stock/get"
+        try:
+            resp = requests.get(url, params=params, headers=_EM_HEADERS, timeout=timeout)
+            resp.raise_for_status()
+            industry = _industry_from_em_payload(resp.json())
+            if industry:
+                return industry
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+    if last_exc:
+        logger.debug("direct EM industry %s failed: %s", symbol, last_exc)
+    return None
+
+
+def _fetch_industry_via_akshare(symbol: str) -> Optional[str]:
+    import akshare as ak
+
+    df = ak.stock_individual_info_em(symbol=symbol)
+    if df is None or df.empty:
+        return None
+    item_col = "item" if "item" in df.columns else df.columns[0]
+    val_col = "value" if "value" in df.columns else df.columns[-1]
+    hit = df.loc[df[item_col].astype(str) == "行业", val_col]
+    if hit.empty:
+        return None
+    raw = str(hit.iloc[0]).strip()
+    return raw or None
+
+
 def fetch_stock_industry_em(
     code: str,
     *,
@@ -63,38 +132,33 @@ def fetch_stock_industry_em(
     max_attempts: int = 3,
 ) -> Optional[str]:
     """Return industry label for a 6-digit A-share code, or None if unavailable."""
-    import time
-
-    import akshare as ak
-
     sym = str(code).strip().zfill(6)
     if not sym.isdigit() or len(sym) != 6:
         return None
+
+    raw: Optional[str] = None
     last_exc: Optional[Exception] = None
     for attempt in range(max(1, max_attempts)):
         try:
-            df = ak.stock_individual_info_em(symbol=sym)
-            if df is None or df.empty:
-                return None
-            item_col = "item" if "item" in df.columns else df.columns[0]
-            val_col = "value" if "value" in df.columns else df.columns[-1]
-            hit = df.loc[df[item_col].astype(str) == "行业", val_col]
-            if hit.empty:
-                return None
-            raw = str(hit.iloc[0]).strip()
-            if not raw:
-                return None
-            if known is None:
-                return raw
-            normalized = normalize_em_industry(raw, known)
-            return normalized or raw
+            raw = _fetch_industry_direct(sym)
+            if raw:
+                break
+            raw = _fetch_industry_via_akshare(sym)
+            if raw:
+                break
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
-            if attempt + 1 < max_attempts:
-                time.sleep(0.8 * (attempt + 1))
-    if last_exc:
-        logger.debug("fetch_stock_industry_em %s failed: %s", sym, last_exc)
-    return None
+        if attempt + 1 < max_attempts:
+            time.sleep(0.8 * (attempt + 1))
+
+    if not raw:
+        if last_exc:
+            logger.debug("fetch_stock_industry_em %s failed: %s", sym, last_exc)
+        return None
+    if known is None:
+        return raw
+    normalized = normalize_em_industry(raw, known)
+    return normalized or raw
 
 
 def industry_lookup_delay_sec() -> float:

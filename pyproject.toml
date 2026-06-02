@@ -16,7 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.4", "ruff>=0.4", "httpx>=0.27"]
 web = [
-    "akshare>=1.13",
+    "akshare>=1.18.64",
     "fastapi>=0.110",
     "jinja2>=3.1",
     "pymysql>=1.1",
@@ -24,7 +24,7 @@ web = [
     "uvicorn[standard]>=0.29",
 ]
 crawler = [
-    "akshare>=1.13",
+    "akshare>=1.18.64",
     "apscheduler>=3.10",
     "requests>=2.31",
     "openpyxl>=3.1",
@@ -37,6 +37,7 @@ crawler = [
 [project.scripts]
 quant-trading-web = "quant_trading.funds.cli:main"
 fund-crawler = "fund_platform.crawler_cli:main"
+fund-telegram-bot = "fund_platform.telegram_bot:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
