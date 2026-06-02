@@ -753,6 +753,14 @@ code {
   color: var(--accent);
 }
 
+.stocks-table th.data-time,
+.stocks-table td.data-time {
+  white-space: nowrap;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .toolbar a.btn.secondary {
   display: inline-flex;
   align-items: center;

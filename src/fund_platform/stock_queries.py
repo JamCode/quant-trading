@@ -279,6 +279,25 @@ def _industry_filter_sql(
     return " AND 1=0", []
 
 
+def stock_daily_sync_finished_at(conn, *, trade_date: str) -> Optional[str]:
+    """Latest successful stock_daily_jobs.finished_at for ``trade_date``."""
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT finished_at
+        FROM stock_daily_jobs
+        WHERE trade_date = %s AND ok = 1 AND finished_at IS NOT NULL
+        ORDER BY finished_at DESC
+        LIMIT 1
+        """,
+        (trade_date,),
+    )
+    row = cur.fetchone()
+    if not row or not row.get("finished_at"):
+        return None
+    return _serialize_row({"finished_at": row["finished_at"]})["finished_at"]
+
+
 def list_stock_daily_dates(conn, *, limit: int = 30) -> list[str]:
     cur = _cursor(conn)
     cur.execute(
@@ -331,7 +350,8 @@ def query_stock_list(
     cur.execute(
         f"""
         SELECT sd.code, sd.name, sd.price, sd.change_pct, sd.float_market_cap, sd.total_market_cap,
-               sd.turnover_pct, sd.amount, sd.pe_dynamic, sd.pb, sd.change_60d_pct, sd.change_ytd_pct
+               sd.turnover_pct, sd.amount, sd.pe_dynamic, sd.pb, sd.change_60d_pct, sd.change_ytd_pct,
+               sd.updated_at
         FROM stock_daily sd
         {where}
         ORDER BY sd.{sort_col} IS NULL, sd.{sort_col} {direction}, sd.code ASC
