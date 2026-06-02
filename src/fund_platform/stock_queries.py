@@ -315,6 +315,23 @@ def stock_intraday_live(conn, *, trade_date: str) -> bool:
     return (now_utc - updated).total_seconds() <= age_sec
 
 
+def stock_quote_snapshot_at(conn, *, trade_date: str) -> Optional[str]:
+    """Latest row write time for ``trade_date`` (Beijing display string)."""
+    cur = _cursor(conn)
+    cur.execute(
+        """
+        SELECT MAX(updated_at) AS t
+        FROM stock_daily
+        WHERE trade_date = %s
+        """,
+        (trade_date,),
+    )
+    row = cur.fetchone()
+    if not row or not row.get("t"):
+        return None
+    return str(format_db_time_cn(row["t"]))
+
+
 def stock_daily_sync_finished_at(conn, *, trade_date: str) -> Optional[str]:
     """Latest successful stock_daily_jobs.finished_at for ``trade_date``."""
     cur = _cursor(conn)
@@ -386,8 +403,7 @@ def query_stock_list(
     cur.execute(
         f"""
         SELECT sd.code, sd.name, sd.price, sd.change_pct, sd.float_market_cap, sd.total_market_cap,
-               sd.turnover_pct, sd.amount, sd.pe_dynamic, sd.pb, sd.change_60d_pct, sd.change_ytd_pct,
-               sd.updated_at
+               sd.turnover_pct, sd.amount, sd.pe_dynamic, sd.pb, sd.change_60d_pct, sd.change_ytd_pct
         FROM stock_daily sd
         {where}
         ORDER BY sd.{sort_col} IS NULL, sd.{sort_col} {direction}, sd.code ASC

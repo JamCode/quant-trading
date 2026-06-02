@@ -15,30 +15,7 @@ const SORTABLE_COLUMNS = [
   { id: "pb", label: "PB", className: "num" },
   { id: "change_60d_pct", label: "60日", className: "num" },
   { id: "change_ytd_pct", label: "年初至今", className: "num" },
-  { id: "updated_at", label: "更新时间(北京)", className: "data-time", sortable: false },
 ];
-
-/** Beijing wall time from API (YYYY-MM-DD HH:MM:SS). */
-function fmtStockDataTime(_tradeDate, updatedAt) {
-  if (!updatedAt) {
-    return "—";
-  }
-  const s = String(updatedAt).trim().replace("T", " ");
-  if (s.length >= 19) {
-    return s.slice(0, 19);
-  }
-  if (s.length >= 16) {
-    return `${s.slice(0, 16)}:00`;
-  }
-  return s;
-}
-
-function fmtSyncTime(syncAt) {
-  if (!syncAt) {
-    return "";
-  }
-  return fmtStockDataTime("", syncAt);
-}
 
 function fmtNum(value, digits = 2) {
   if (value === null || value === undefined || value === "") {
@@ -95,14 +72,6 @@ function renderBoardChips(options, activeBoard) {
 
 function renderSortableHead(sort, order) {
   return SORTABLE_COLUMNS.map((col) => {
-    if (col.sortable === false) {
-      const cls = col.className || "";
-      const title =
-        col.id === "updated_at"
-          ? "行情写入数据库时间（收盘快照，非盘中实时）"
-          : "";
-      return `<th class="${cls}" scope="col"${title ? ` title="${escapeHtml(title)}"` : ""}>${escapeHtml(col.label)}</th>`;
-    }
     const active = col.id === sort;
     const arrow = active ? (order === "asc" ? " ↑" : " ↓") : "";
     const cls = ["sortable", col.className, active ? "sort-active" : ""].filter(Boolean).join(" ");
@@ -127,6 +96,18 @@ function buildFilterSummary(query, meta) {
     parts.push(`排序 ${sortLabel}${query.order === "asc" ? "↑" : "↓"}`);
   }
   return parts;
+}
+
+function renderQuoteTimeLine(data, meta) {
+  const quoteAt = data.quote_updated_at || meta.quote_updated_at || "";
+  const live = Boolean(data.intraday_live);
+  const timeLabel = live ? "行情时间(北京)" : "快照时间(北京)";
+  const timePart = quoteAt
+    ? `${timeLabel} <strong>${escapeHtml(quoteAt)}</strong>`
+    : `${timeLabel} <strong>—</strong>`;
+  const livePart = live ? ' <span class="live-badge">盘中</span>' : "";
+  const refreshHint = live ? " · 交易时段约每 30 秒刷新" : "";
+  return `${timePart}${livePart}${refreshHint}`;
 }
 
 export async function mountStocks(query) {
@@ -170,11 +151,8 @@ export async function mountStocks(query) {
       .join("");
 
     const td = data.trade_date || tradeDate || "";
-    const syncAt = data.sync_finished_at || meta.sync_finished_at || "";
     let rows = "";
     (data.items || []).forEach((r) => {
-      const timeLabel = fmtStockDataTime(td, r.updated_at);
-      const timeTitle = r.updated_at ? escapeHtml(String(r.updated_at)) : "";
       rows += `<tr class="clickable" data-code="${escapeHtml(r.code)}">
         <td><code>${escapeHtml(r.code)}</code></td>
         <td>${escapeHtml(r.name || "")}</td>
@@ -187,22 +165,16 @@ export async function mountStocks(query) {
         <td class="num">${fmtNum(r.pb)}</td>
         <td class="num ${pctClassNum(r.change_60d_pct)}">${fmtPct(r.change_60d_pct)}</td>
         <td class="num ${pctClassNum(r.change_ytd_pct)}">${fmtPct(r.change_ytd_pct)}</td>
-        <td class="data-time"${timeTitle ? ` title="${timeTitle}"` : ""}>${escapeHtml(timeLabel)}</td>
       </tr>`;
     });
     if (!rows) {
       const hint = data.trade_date
         ? "无匹配股票，可放宽筛选或<a href=\"#\" data-stocks-clear>清空条件</a>"
         : '暂无数据，请确认 <a href="#" data-nav data-path="/crawler">stock_daily_sync</a> 已运行';
-      rows = `<tr><td colspan="12">${hint}</td></tr>`;
+      rows = `<tr><td colspan="11">${hint}</td></tr>`;
     }
 
-    const liveBadge = data.intraday_live
-      ? ' · <span class="live-badge">盘中刷新</span>'
-      : "";
-    const syncHint = syncAt
-      ? ` · 最近入库(北京) <strong>${escapeHtml(fmtSyncTime(syncAt))}</strong>`
-      : "";
+    const quoteLine = renderQuoteTimeLine(data, meta);
     const filterParts = buildFilterSummary(query, meta);
     const cov = meta.industry_coverage || {};
     const pending = Number(cov.pending || 0);
@@ -214,7 +186,7 @@ export async function mountStocks(query) {
       ? `当前：${filterParts.join(" · ")}${industryMapHint}`
       : `点击板块标签筛选；表头点击排序${industryMapHint}`;
 
-    host.innerHTML = `<p class="sub meta">数据日 <strong>${escapeHtml(td || "—")}</strong>${liveBadge}${syncHint} · 共 ${data.total ?? 0} 只 · 第 ${data.page}/${data.pages} 页 · 交易时段约每 30 秒刷新现价</p>
+    host.innerHTML = `<p class="sub meta">数据日 <strong>${escapeHtml(td || "—")}</strong> · ${quoteLine} · 共 ${data.total ?? 0} 只 · 第 ${data.page}/${data.pages} 页</p>
       <div class="funds-filters panel stocks-filters">
         <p class="dim">板块</p>
         <div class="chip-group" id="stocks-board-chips">${renderBoardChips(meta.board_options, activeBoard)}</div>

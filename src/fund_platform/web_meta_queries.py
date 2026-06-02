@@ -71,12 +71,12 @@ def stocks_catalog_meta(conn, *, trade_date: str | None = None) -> dict[str, Any
 
     latest = stock_queries.latest_stock_daily_date(conn)
     td = trade_date or latest
-    sync_finished_at = (
-        stock_queries.stock_daily_sync_finished_at(conn, trade_date=td) if td else None
+    quote_updated_at = (
+        stock_queries.stock_quote_snapshot_at(conn, trade_date=td) if td else None
     )
     return {
         "latest_trade_date": latest,
-        "sync_finished_at": sync_finished_at,
+        "quote_updated_at": quote_updated_at,
         "trade_dates": stock_queries.list_stock_daily_dates(conn),
         "sort_options": [
             {"id": sid, "label": label} for sid, label in stock_queries.STOCK_SORT_OPTIONS

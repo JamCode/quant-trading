@@ -400,11 +400,11 @@ def api_stocks(
         offset=offset,
     )
     pages = max(1, (total + per_page - 1) // per_page)
-    sync_finished_at = stock_queries.stock_daily_sync_finished_at(conn, trade_date=td)
+    quote_updated_at = stock_queries.stock_quote_snapshot_at(conn, trade_date=td)
     intraday_live = stock_queries.stock_intraday_live(conn, trade_date=td)
     return {
         "trade_date": td,
-        "sync_finished_at": sync_finished_at,
+        "quote_updated_at": quote_updated_at,
         "intraday_live": intraday_live,
         "page": page,
         "per_page": per_page,
