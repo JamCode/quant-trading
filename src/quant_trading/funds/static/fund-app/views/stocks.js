@@ -18,16 +18,26 @@ const SORTABLE_COLUMNS = [
   { id: "updated_at", label: "更新时间(北京)", className: "data-time", sortable: false },
 ];
 
-/** Snapshot trade date vs row write time (DB updated_at). */
-function fmtStockDataTime(tradeDate, updatedAt) {
+/** Beijing wall time from API (YYYY-MM-DD HH:MM:SS). */
+function fmtStockDataTime(_tradeDate, updatedAt) {
   if (!updatedAt) {
     return "—";
   }
-  const s = String(updatedAt);
-  if (tradeDate && s.startsWith(tradeDate)) {
-    return s.length >= 16 ? s.slice(11, 16) : s.slice(11) || s;
+  const s = String(updatedAt).trim().replace("T", " ");
+  if (s.length >= 19) {
+    return s.slice(0, 19);
   }
-  return s.length >= 16 ? s.slice(0, 16) : s;
+  if (s.length >= 16) {
+    return `${s.slice(0, 16)}:00`;
+  }
+  return s;
+}
+
+function fmtSyncTime(syncAt) {
+  if (!syncAt) {
+    return "";
+  }
+  return fmtStockDataTime("", syncAt);
 }
 
 function fmtNum(value, digits = 2) {
@@ -188,7 +198,7 @@ export async function mountStocks(query) {
     }
 
     const syncHint = syncAt
-      ? ` · 行情入库(北京) <strong>${escapeHtml(syncAt)}</strong>`
+      ? ` · 行情入库(北京) <strong>${escapeHtml(fmtSyncTime(syncAt))}</strong>`
       : "";
     const filterParts = buildFilterSummary(query, meta);
     const cov = meta.industry_coverage || {};
